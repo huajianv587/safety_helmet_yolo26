@@ -1,0 +1,20 @@
+[
+  {
+    "person_id": "person-001",
+    "name": "Zhang San",
+    "employee_id": "E10001",
+    "department": "Safety",
+    "team": "Shift A",
+    "role": "Inspector",
+    "phone": "13800000001"
+  },
+  {
+    "person_id": "person-002",
+    "name": "Li Si",
+    "employee_id": "E10002",
+    "department": "Production",
+    "team": "Shift B",
+    "role": "Worker",
+    "phone": "13800000002"
+  }
+]

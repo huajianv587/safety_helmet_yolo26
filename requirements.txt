@@ -1,0 +1,9 @@
+ultralytics
+streamlit
+opencv-python-headless
+numpy
+pandas
+python-dotenv
+supabase
+httpx
+Pillow

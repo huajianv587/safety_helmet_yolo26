@@ -1,0 +1,6 @@
+path: data/helmet_detection_dataset
+train: images/train
+val: images/val
+names:
+  0: helmet
+  1: no_helmet

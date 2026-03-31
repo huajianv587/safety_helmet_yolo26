@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  dashboard:
+    build: .
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    environment:
+      PYTHONPATH: /app/src
+      YOLO_CONFIG_DIR: /app/.ultralytics
+
+  monitor:
+    build: .
+    command: python scripts/run_monitor.py
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    environment:
+      PYTHONPATH: /app/src
+      YOLO_CONFIG_DIR: /app/.ultralytics

@@ -1,0 +1,6 @@
+path: D:/YOLO_Helmet_Data
+train: images/train
+val: images/val
+names:
+  0: hat
+  1: person

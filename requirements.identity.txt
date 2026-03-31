@@ -1,0 +1,7 @@
+# Optional identity stack for badge OCR and face recognition.
+# PaddleOCR and facenet-pytorch are usually more stable on Python 3.10/3.11.
+httpx
+Pillow
+facenet-pytorch
+paddleocr
+rapidocr-onnxruntime

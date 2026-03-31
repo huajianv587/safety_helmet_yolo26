@@ -1,0 +1,129 @@
+{
+  "repository_backend": "supabase",
+  "model": {
+    "path": "artifacts/training_runs/helmet_project/cpu_test3/weights/best.pt",
+    "confidence": 0.45,
+    "imgsz": 640,
+    "device": "cpu",
+    "violation_labels": ["no_helmet", "person"],
+    "safe_labels": ["helmet", "hat"]
+  },
+  "event_rules": {
+    "alert_frames": 6,
+    "dedupe_seconds": 300,
+    "match_distance_pixels": 120,
+    "max_track_age_seconds": 2.5,
+    "min_confidence_for_alert": 0.5
+  },
+  "persistence": {
+    "snapshot_dir": "artifacts/captures",
+    "runtime_dir": "artifacts/runtime",
+    "save_annotated_snapshot": true,
+    "upload_to_supabase_storage": true,
+    "storage_prefix": "alerts",
+    "keep_local_copy": true
+  },
+  "monitoring": {
+    "frame_stride": 3,
+    "camera_retry_seconds": 5.0,
+    "heartbeat_interval_seconds": 10.0,
+    "max_frames": 0
+  },
+  "identity": {
+    "provider": "hybrid",
+    "registry_path": "configs/person_registry.json",
+    "refresh_seconds": 60,
+    "unknown_person_name": "Unknown"
+  },
+  "face_recognition": {
+    "enabled": true,
+    "provider": "facenet_pytorch",
+    "device": "cpu",
+    "similarity_threshold": 0.62,
+    "review_threshold": 0.52,
+    "top_k": 3,
+    "face_profile_dir": "artifacts/identity/faces"
+  },
+  "ocr": {
+    "enabled": true,
+    "provider": "auto",
+    "min_confidence": 0.35,
+    "badge_roi_y_start": 0.22,
+    "badge_roi_y_end": 0.72,
+    "badge_roi_x_margin": 0.18
+  },
+  "llm_fallback": {
+    "enabled": true,
+    "use_openai": true,
+    "use_deepseek": true,
+    "openai_model": "gpt-5-mini",
+    "deepseek_model": "deepseek-chat",
+    "timeout_seconds": 20.0,
+    "max_candidates": 5
+  },
+  "tracking": {
+    "enabled": true,
+    "provider": "builtin",
+    "tracker_config": "bytetrack.yaml",
+    "persist": true
+  },
+  "governance": {
+    "enabled": true,
+    "min_bbox_area": 3600,
+    "ignore_zones": {},
+    "whitelist_camera_ids": [],
+    "night_start_hour": 19,
+    "night_end_hour": 6,
+    "night_confidence_boost": 0.08,
+    "review_confidence_margin": 0.08
+  },
+  "clip": {
+    "enabled": true,
+    "pre_seconds": 5,
+    "post_seconds": 5,
+    "fps": 12.0,
+    "codec": "mp4v"
+  },
+  "notifications": {
+    "enabled": true,
+    "email_enabled": true,
+    "default_recipients": []
+  },
+  "security": {
+    "use_private_bucket": false,
+    "signed_url_seconds": 86400,
+    "evidence_retention_days": 90,
+    "audit_enabled": true
+  },
+  "cameras": [
+    {
+      "camera_id": "cam-local-001",
+      "camera_name": "Laptop Camera",
+      "source": "0",
+      "location": "Local Workstation",
+      "department": "Safety",
+      "site_name": "Demo Site",
+      "building_name": "HQ",
+      "floor_name": "Floor 1",
+      "workshop_name": "Safety Lab",
+      "zone_name": "Desktop",
+      "responsible_department": "Safety",
+      "alert_emails": []
+    },
+    {
+      "camera_id": "cam-rtsp-001",
+      "camera_name": "RTSP Camera",
+      "source": "rtsp://replace-with-your-camera-url",
+      "location": "Factory RTSP Zone",
+      "department": "Safety",
+      "site_name": "Demo Site",
+      "building_name": "Workshop Building",
+      "floor_name": "Floor 1",
+      "workshop_name": "Line A",
+      "zone_name": "Gate 1",
+      "responsible_department": "Safety",
+      "alert_emails": [],
+      "enabled": false
+    }
+  ]
+}
