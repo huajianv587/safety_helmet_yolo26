@@ -783,6 +783,29 @@ def _upsert_runtime_camera(config_path: Path, camera_payload: dict) -> None:
     _save_raw_config(config_path, raw)
 
 
+def _runtime_camera_source(config_path: Path, camera_id: str | None) -> str:
+    if not camera_id or not config_path.exists():
+        return ""
+    raw = _load_raw_config(config_path)
+    for item in raw.get("cameras", []):
+        if item.get("camera_id") == camera_id:
+            return str(item.get("source", "")).strip()
+    return ""
+
+
+def _is_safe_camera_source_reference(value: str) -> bool:
+    source = str(value).strip()
+    if not source:
+        return False
+    if source.startswith("${") and source.endswith("}"):
+        return True
+    if source.startswith("env:"):
+        return True
+    if "://" in source:
+        return False
+    return True
+
+
 def _filter_alerts(
     alerts: list[dict],
     *,
@@ -2288,9 +2311,17 @@ def render_camera_center(settings, repository, cameras: list[dict]) -> None:
         current = existing_options[selected]
 
         with st.form("camera_form"):
+            raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
+            source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
             camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
             camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
-            source = st.text_input("source", value=current.source if current else "0")
+            source_ref = st.text_input(
+                "source_ref",
+                value=source_default,
+                help="仅允许本地设备号/本地视频路径，或环境变量引用，如 ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}。",
+            )
+            if current and raw_source and not _is_safe_camera_source_reference(raw_source):
+                st.warning("当前远程源地址已隐藏。请改为环境变量占位符后再保存，避免把明文地址写回 runtime.json。")
             enabled = st.checkbox("enabled", value=current.enabled if current else True)
             location = st.text_input("location", value=current.location if current else "")
             department = st.text_input("department", value=current.department if current else "")
@@ -2311,10 +2342,14 @@ def render_camera_center(settings, repository, cameras: list[dict]) -> None:
             default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
             save_submit = st.form_submit_button("保存到运行配置")
     if save_submit and camera_id:
+        source_value = source_ref.strip() or raw_source
+        if not _is_safe_camera_source_reference(source_value):
+            st.error("source_ref 仅支持本地设备号、本地视频路径，或环境变量引用。")
+            return
         payload = {
             "camera_id": camera_id,
             "camera_name": camera_name or camera_id,
-            "source": source,
+            "source": source_value,
             "enabled": enabled,
             "location": location or "Unknown",
             "department": department or "Unknown",
@@ -4008,9 +4043,17 @@ def render_camera_center(settings, repository, cameras: list[dict], language: st
         current = existing_options[selected]
 
         with st.form("camera_form_en"):
+            raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
+            source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
             camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
             camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
-            source = st.text_input("source", value=current.source if current else "0")
+            source_ref = st.text_input(
+                "source_ref",
+                value=source_default,
+                help="Allow local device indexes / local video paths, or env placeholders such as ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}.",
+            )
+            if current and raw_source and not _is_safe_camera_source_reference(raw_source):
+                st.warning("The current remote source is hidden. Replace it with an env placeholder before saving so secrets are not written back to runtime.json.")
             enabled = st.checkbox("enabled", value=current.enabled if current else True)
             location = st.text_input("location", value=current.location if current else "")
             department = st.text_input("department", value=current.department if current else "")
@@ -4031,10 +4074,14 @@ def render_camera_center(settings, repository, cameras: list[dict], language: st
             default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
             save_submit = st.form_submit_button("Save to Runtime Config")
     if save_submit and camera_id:
+        source_value = source_ref.strip() or raw_source
+        if not _is_safe_camera_source_reference(source_value):
+            st.error("source_ref only accepts local device indexes, local video paths, or env placeholders.")
+            return
         payload = {
             "camera_id": camera_id,
             "camera_name": camera_name or camera_id,
-            "source": source,
+            "source": source_value,
             "enabled": enabled,
             "location": location or "Unknown",
             "department": department or "Unknown",

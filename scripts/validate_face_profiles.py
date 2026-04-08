@@ -6,7 +6,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 
@@ -20,6 +19,7 @@ if str(SRC_ROOT) not in sys.path:
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.face_recognition import FaceRecognitionService
 from helmet_monitoring.services.person_directory import FaceProfileRecord, PersonDirectory
+from helmet_monitoring.utils.image_io import read_image
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -70,7 +70,7 @@ def evaluate_image(
     expected_person_id = person.get("person_id") if person else image_path.parent.name
     expected_name = person.get("name", expected_person_id) if person else expected_person_id
 
-    image = cv2.imread(str(image_path))
+    image = read_image(image_path)
     if image is None:
         return ValidationResult(
             person_id=expected_person_id,

@@ -57,6 +57,55 @@ def _load_people_count(registry_path: Path) -> int:
     return 0
 
 
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _app_uses_demo_console_auth(app_path: Path) -> bool:
+    source = _read_text(app_path)
+    if not source:
+        return False
+    has_role_selector = "st.sidebar.selectbox" in source and '"当前角色"' in source
+    has_demo_operator = "st.sidebar.text_input" in source and "demo.operator" in source
+    return has_role_selector and has_demo_operator
+
+
+def _app_allows_raw_camera_source_editing(app_path: Path) -> bool:
+    source = _read_text(app_path)
+    if not source:
+        return False
+    return 'source = st.text_input("source"' in source
+
+
+def _config_camera_secret_issues(config_path: Path) -> list[str]:
+    if not config_path.exists():
+        return []
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    issues: list[str] = []
+    for camera in payload.get("cameras", []):
+        camera_id = str(camera.get("camera_id", "unknown-camera"))
+        source = str(camera.get("source", "")).strip()
+        if not source or source.isdigit() or source.startswith("${") or source.startswith("env:"):
+            continue
+        lowered = source.lower()
+        if "://" not in lowered:
+            continue
+        authority = lowered.split("://", 1)[1].split("/", 1)[0]
+        if "@" in authority and ":" in authority.split("@", 1)[0]:
+            issues.append(camera_id)
+            continue
+        if any(token in lowered for token in ("token=", "apikey=", "api_key=", "access_token=")):
+            issues.append(camera_id)
+    return issues
+
+
 def _count_images(target: Path) -> int:
     if not target.exists():
         return 0
@@ -112,6 +161,7 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     python_minor = (sys.version_info.major, sys.version_info.minor)
 
     config_path = settings.config_path
+    app_path = base / "app.py"
     model_path = settings.resolve_path(settings.model.path)
     registry_path = settings.resolve_path(settings.identity.registry_path)
     dataset_root = base / "data" / "helmet_detection_dataset"
@@ -150,6 +200,45 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
         checks.append(ReadinessCheck("runtime_config", "ready", f"Using runtime config: {config_path}"))
     else:
         checks.append(ReadinessCheck("runtime_config", "missing", f"Missing runtime config: {config_path}"))
+
+    if app_path.exists():
+        if _app_uses_demo_console_auth(app_path):
+            checks.append(
+                ReadinessCheck(
+                    "console_auth",
+                    "warn",
+                    "Dashboard still uses sidebar role/operator demo controls instead of trusted authentication.",
+                )
+            )
+        else:
+            checks.append(ReadinessCheck("console_auth", "ready", "Dashboard does not expose demo role-switch controls."))
+
+        camera_secret_issues = _config_camera_secret_issues(config_path)
+        if camera_secret_issues:
+            checks.append(
+                ReadinessCheck(
+                    "camera_secret_refs",
+                    "warn",
+                    "Camera sources with embedded credentials/tokens found in runtime config: "
+                    + ", ".join(camera_secret_issues),
+                )
+            )
+        elif _app_allows_raw_camera_source_editing(app_path):
+            checks.append(
+                ReadinessCheck(
+                    "camera_secret_refs",
+                    "warn",
+                    "Dashboard still allows raw camera source editing; prefer env placeholders or a secret manager.",
+                )
+            )
+        else:
+            checks.append(
+                ReadinessCheck(
+                    "camera_secret_refs",
+                    "ready",
+                    "Camera source management avoids inline secrets in tracked runtime config.",
+                )
+            )
 
     if model_path.exists():
         checks.append(ReadinessCheck("detector_model", "ready", f"Model found: {model_path}"))
@@ -294,6 +383,13 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     next_actions: list[str] = []
     if python_minor not in SUPPORTED_PYTHON_MINORS:
         next_actions.append("Rebuild the project virtual environment with Python 3.11 (preferred) or Python 3.10.")
+    if app_path.exists() and _app_uses_demo_console_auth(app_path):
+        next_actions.append("Replace the dashboard sidebar role/operator controls with trusted authentication and server-side authorization.")
+    camera_secret_issues = _config_camera_secret_issues(config_path)
+    if camera_secret_issues:
+        next_actions.append("Move camera credentials/tokens out of runtime.json into env placeholders or a secret manager.")
+    elif app_path.exists() and _app_allows_raw_camera_source_editing(app_path):
+        next_actions.append("Lock down camera source editing so operators cannot write raw RTSP credentials into tracked config.")
     if not model_path.exists():
         next_actions.append("Train or place a production detector model, then update model.path in configs/runtime.json.")
     if not enabled_cameras:

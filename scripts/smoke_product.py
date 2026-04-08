@@ -30,7 +30,8 @@ from helmet_monitoring.services.notifier import NotificationService
 from helmet_monitoring.services.readiness import ensure_workspace_scaffold
 from helmet_monitoring.services.workflow import AlertWorkflowService
 from helmet_monitoring.storage.evidence_store import EvidenceStore
-from helmet_monitoring.storage.repository import LocalAlertRepository
+from helmet_monitoring.storage.repository import LocalAlertRepository, build_repository
+from helmet_monitoring.utils.image_io import read_image
 
 
 def parse_args() -> argparse.Namespace:
@@ -183,7 +184,7 @@ def _load_sample_frame_with_source(
 ) -> tuple[np.ndarray, str]:
     if settings is not None:
         for image_path in _iter_sample_paths(settings, require_violation=require_violation, limit=limit):
-            frame = cv2.imread(str(image_path))
+            frame = read_image(image_path)
             if frame is not None:
                 return frame, str(image_path)
     else:
@@ -194,7 +195,7 @@ def _load_sample_frame_with_source(
                 continue
             for pattern in ("*.jpg", "*.jpeg", "*.png"):
                 for image_path in sorted(image_dir.glob(pattern)):
-                    frame = cv2.imread(str(image_path))
+                    frame = read_image(image_path)
                     if frame is not None:
                         return frame, str(image_path)
     return np.full((480, 640, 3), 220, dtype=np.uint8), "synthetic_blank_frame"
@@ -262,7 +263,7 @@ def _prepare_smoke_input(settings, args: argparse.Namespace) -> tuple[np.ndarray
             require_violation=True,
             limit=max(1, args.max_sample_search),
         ):
-            frame = cv2.imread(str(sample_path))
+            frame = read_image(sample_path)
             if frame is None:
                 continue
             tested += 1
@@ -295,9 +296,7 @@ def main() -> None:
 
     repository = LocalAlertRepository(settings.resolve_path(settings.persistence.runtime_dir))
     if args.strict_runtime:
-        from helmet_monitoring.storage.repository import build_repository
-
-        repository = build_repository(settings)
+        repository = build_repository(settings, require_requested_backend=True)
     evidence_store = EvidenceStore(settings)
     notifier = NotificationService(settings, repository)
     workflow = AlertWorkflowService(repository)

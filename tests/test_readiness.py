@@ -14,6 +14,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from helmet_monitoring.core.config import (
     AppSettings,
+    CameraSettings,
     ClipSettings,
     EventRuleSettings,
     FaceRecognitionSettings,
@@ -98,6 +99,51 @@ class ReadinessTest(unittest.TestCase):
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("storage_privacy", checks)
             self.assertEqual(checks["storage_privacy"]["status"], "warn")
+
+    def test_collect_readiness_report_warns_when_demo_console_auth_is_present(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "configs").mkdir(parents=True, exist_ok=True)
+            (root / "configs" / "runtime.json").write_text("{}", encoding="utf-8")
+            (root / "app.py").write_text(
+                'role = st.sidebar.selectbox("当前角色", ["viewer"])\n'
+                'operator = st.sidebar.text_input("当前操作人", value="demo.operator")\n',
+                encoding="utf-8",
+            )
+            settings = build_settings(root)
+            report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertIn("console_auth", checks)
+            self.assertEqual(checks["console_auth"]["status"], "warn")
+
+    def test_collect_readiness_report_warns_when_runtime_config_contains_inline_camera_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "configs").mkdir(parents=True, exist_ok=True)
+            (root / "configs" / "runtime.json").write_text(
+                (
+                    '{"cameras": [{"camera_id": "cam-1", "source": "rtsp://admin:secret@example.com/live"}]}'
+                ),
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text("pass\n", encoding="utf-8")
+            settings = build_settings(root)
+            settings = replace(
+                settings,
+                cameras=(
+                    CameraSettings(
+                        camera_id="cam-1",
+                        camera_name="Camera 1",
+                        source="rtsp://admin:secret@example.com/live",
+                        location="Lab",
+                        department="QA",
+                    ),
+                ),
+            )
+            report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertIn("camera_secret_refs", checks)
+            self.assertEqual(checks["camera_secret_refs"]["status"], "warn")
 
 
 if __name__ == "__main__":

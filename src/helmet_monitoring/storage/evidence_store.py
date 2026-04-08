@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from helmet_monitoring.core.config import AppSettings
+from helmet_monitoring.utils.image_io import write_image
 
 try:
     from supabase import create_client
@@ -125,7 +126,8 @@ class EvidenceStore:
         category: str = "alerts",
     ) -> Tuple[str, str | None]:
         local_path = self._local_path(camera_id, artifact_id, created_at, category, ".jpg")
-        cv2.imwrite(str(local_path), frame)
+        if not write_image(local_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
+            raise RuntimeError(f"Unable to write image artifact: {local_path}")
         object_path = self._remote_object_path(camera_id, artifact_id, created_at, category, ".jpg")
         access_url = self._upload_local_file(local_path, object_path, "image/jpeg")
         self._cleanup_local_copy(local_path, access_url)

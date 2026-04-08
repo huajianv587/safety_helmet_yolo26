@@ -16,6 +16,7 @@ if str(SRC_ROOT) not in sys.path:
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.monitor import SafetyHelmetMonitor
 from helmet_monitoring.services.video_sources import local_device_access_issue
+from helmet_monitoring.storage.repository import build_repository
 
 
 INVALID_REMOTE_SOURCE_MARKERS = (
@@ -71,7 +72,8 @@ def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
     validate_runtime_sources(settings)
-    monitor = SafetyHelmetMonitor(settings)
+    repository = build_repository(settings, require_requested_backend=True)
+    monitor = SafetyHelmetMonitor(settings, repository=repository)
     frame_limit = args.max_frames if args.max_frames > 0 else None
     monitor.run(max_frames=frame_limit)
 

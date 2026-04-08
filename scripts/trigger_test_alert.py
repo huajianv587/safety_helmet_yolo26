@@ -23,6 +23,7 @@ from helmet_monitoring.services.identity_resolver import build_identity_resolver
 from helmet_monitoring.services.person_directory import PersonDirectory
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import build_repository
+from helmet_monitoring.utils.image_io import read_image
 
 
 UTC = timezone.utc
@@ -117,14 +118,14 @@ def _overlay_snapshot(frame, event_no: str, person_name: str | None, image_name:
 def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
-    repository = build_repository(settings)
+    repository = build_repository(settings, require_requested_backend=True)
     evidence_store = EvidenceStore(settings)
     identity_resolver = build_identity_resolver(settings)
     directory = PersonDirectory(settings)
 
     camera = _select_camera(settings, args.camera_id)
     image_path = _find_image(settings, args.person_id, args.image)
-    frame = cv2.imread(str(image_path))
+    frame = read_image(image_path)
     if frame is None:
         raise RuntimeError(f"Unable to read image: {image_path}")
 

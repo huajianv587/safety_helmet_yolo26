@@ -18,13 +18,16 @@ import cv2
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.core.schemas import utc_now
 from helmet_monitoring.storage.evidence_store import EvidenceStore
+from helmet_monitoring.utils.image_io import read_image
 
 
 def main() -> None:
     settings = load_settings("configs/runtime.json")
     image_dir = settings.resolve_path("data/helmet_detection_dataset/images/val")
     image_path = next(image_dir.glob("*.jpg"))
-    frame = cv2.imread(str(image_path))
+    frame = read_image(image_path)
+    if frame is None:
+        raise RuntimeError(f"Unable to read image: {image_path}")
     store = EvidenceStore(settings)
     local_path, public_url = store.save("smoke-cam", frame, uuid.uuid4().hex, utc_now())
     print(f"local_path={local_path}")

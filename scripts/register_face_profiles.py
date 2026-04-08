@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import cv2
 from supabase import create_client
 
 
@@ -14,6 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.face_recognition import FaceRecognitionService
+from helmet_monitoring.utils.image_io import read_image
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -56,7 +56,7 @@ def main() -> None:
         if person_id not in active_person_ids:
             skipped_files += 1
             continue
-        image = cv2.imread(str(image_path))
+        image = read_image(image_path)
         if image is None:
             skipped_files += 1
             continue

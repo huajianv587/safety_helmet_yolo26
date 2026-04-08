@@ -505,7 +505,7 @@ class SupabaseAlertRepository(AlertRepository):
             raise
 
 
-def build_repository(settings: AppSettings) -> AlertRepository:
+def build_repository(settings: AppSettings, *, require_requested_backend: bool = False) -> AlertRepository:
     runtime_dir = settings.resolve_path(settings.persistence.runtime_dir)
     fallback_repo = LocalAlertRepository(runtime_dir)
     if settings.repository_backend == "supabase" and settings.supabase.is_configured:
@@ -518,5 +518,9 @@ def build_repository(settings: AppSettings) -> AlertRepository:
             repository.list_cameras()
             return repository
         except Exception as exc:  # pragma: no cover
+            if require_requested_backend:
+                raise RuntimeError(f"Supabase backend requested but is unavailable: {exc}") from exc
             print(f"[repository] Supabase unavailable, fallback to local store: {exc}")
+    elif settings.repository_backend == "supabase" and require_requested_backend:
+        raise RuntimeError("Supabase backend requested but SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are missing.")
     return fallback_repo
