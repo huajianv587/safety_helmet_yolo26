@@ -18,6 +18,12 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from helmet_monitoring.core.config import load_settings
+from helmet_monitoring.services.auth import (
+    TrustedIdentity,
+    auth_configuration_summary,
+    authenticate_user,
+    role_has_permission,
+)
 from helmet_monitoring.services.notifier import NotificationService
 from helmet_monitoring.services.operations import operations_paths
 from helmet_monitoring.services.person_directory import PersonDirectory
@@ -54,6 +60,7 @@ ROLE_PAGES = {
     "team_lead": ["总览", "人工复核台", "统计报表"],
     "viewer": ["总览", "统计报表"],
 }
+AUTH_SESSION_KEY = "trusted_identity"
 PAGE_META = {
     "总览": {
         "kicker": "INDUSTRIAL SAFETY INTELLIGENCE",
@@ -256,6 +263,106 @@ def _page_meta(page: str, language: str) -> dict[str, str]:
 
 def _role_label(role: str, language: str) -> str:
     return ROLE_LABELS.get(role, ROLE_LABELS["viewer"])[language]
+
+
+def _current_identity() -> TrustedIdentity | None:
+    payload = st.session_state.get(AUTH_SESSION_KEY)
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return TrustedIdentity.from_record(payload)
+    except ValueError:
+        st.session_state.pop(AUTH_SESSION_KEY, None)
+        return None
+
+
+def _current_role() -> str:
+    identity = _current_identity()
+    return identity.role if identity is not None else "viewer"
+
+
+def _set_current_identity(identity: TrustedIdentity) -> None:
+    st.session_state[AUTH_SESSION_KEY] = identity.to_record()
+
+
+def _clear_current_identity() -> None:
+    st.session_state.pop(AUTH_SESSION_KEY, None)
+
+
+def _render_sidebar_identity(identity: TrustedIdentity, language: str) -> None:
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-brand" style="padding-top:0.82rem;">
+            <div class="sidebar-kicker">{html.escape(_txt(language, "当前会话", "ACTIVE SESSION"))}</div>
+            <div class="sidebar-title">{html.escape(identity.display_name)}</div>
+            <div class="sidebar-copy">
+                {html.escape(_txt(language, "账号", "Username"))}: <strong>{html.escape(identity.username)}</strong><br>
+                {html.escape(_txt(language, "角色", "Role"))}: <strong>{html.escape(_role_label(identity.role, language))}</strong><br>
+                {html.escape(_txt(language, "邮箱", "Email"))}: <strong>{html.escape(identity.email or "--")}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.sidebar.button(_txt(language, "退出登录", "Sign Out"), use_container_width=True):
+        _clear_current_identity()
+        st.rerun()
+
+
+def _require_trusted_identity(language: str) -> TrustedIdentity:
+    configured = auth_configuration_summary()
+    identity = _current_identity()
+    if configured["configured"] and identity is not None:
+        return identity
+
+    if not configured["configured"]:
+        st.error(
+            _txt(
+                language,
+                "控制台尚未配置可信登录账户，请先在 .env 中设置 HELMET_AUTH_ADMIN_* 或 HELMET_AUTH_USERS_JSON。",
+                "Trusted console authentication is not configured. Set HELMET_AUTH_ADMIN_* or HELMET_AUTH_USERS_JSON in .env first.",
+            )
+        )
+        st.code(
+            "HELMET_AUTH_ADMIN_USERNAME=admin\n"
+            "HELMET_AUTH_ADMIN_PASSWORD_HASH=<run python scripts/generate_password_hash.py>\n"
+            "HELMET_AUTH_ADMIN_DISPLAY_NAME=Safety Admin\n"
+            "HELMET_AUTH_ADMIN_ROLE=admin",
+            language="dotenv",
+        )
+        st.stop()
+
+    login_col, info_col = st.columns((1.05, 0.95))
+    with login_col:
+        st.markdown(f"### {_txt(language, '控制台登录', 'Console Sign In')}")
+        with st.form("console_login_form"):
+            username = st.text_input(_txt(language, "账号", "Username"))
+            password = st.text_input(_txt(language, "密码", "Password"), type="password")
+            submit = st.form_submit_button(_txt(language, "登录控制台", "Sign In"))
+        if submit:
+            authenticated = authenticate_user(username, password)
+            if authenticated is None:
+                st.error(_txt(language, "账号或密码错误。", "Invalid username or password."))
+            else:
+                _set_current_identity(authenticated)
+                st.rerun()
+    with info_col:
+        st.markdown(f"### {_txt(language, '访问控制', 'Access Control')}")
+        st.info(
+            _txt(
+                language,
+                "登录后才能进入控制台页面，角色权限会同时限制工单处理和摄像头配置修改。",
+                "The dashboard requires sign-in before page access, and role permissions also gate workflow actions and camera configuration changes.",
+            )
+        )
+        st.caption(
+            _txt(
+                language,
+                f"当前已配置 {configured['enabled_users']} 个账户，角色覆盖：{', '.join(configured['roles']) or 'viewer'}。",
+                f"{configured['enabled_users']} account(s) configured. Roles: {', '.join(configured['roles']) or 'viewer'}.",
+            )
+        )
+    st.stop()
 
 
 def _status_label(value: str | None, language: str = "zh") -> str:
@@ -2204,31 +2311,44 @@ def render_review_desk(settings, repository, directory: PersonDirectory, evidenc
         label = f"{person.get('name')} | {person.get('employee_id')} | {person.get('department')}"
         person_labels[label] = person
 
-    if role == "viewer":
+    can_assign = role_has_permission(role, "review.assign")
+    can_update = role_has_permission(role, "review.update")
+    if not can_assign and not can_update:
         st.info("当前角色为只读访客，可查看告警详情，但不能处理或转派。")
-    else:
-        assign_col, status_col = st.columns(2)
-        with assign_col:
-            _section_header("ASSIGNMENT", "转派", "将当前工单交给明确负责人，并同步记录备注信息。")
+        return
+
+    assign_col, status_col = st.columns(2)
+    with assign_col:
+        _section_header("ASSIGNMENT", "转派", "将当前工单交给明确负责人，并同步记录备注信息。")
+        if not can_assign:
+            st.info("当前角色不能转派工单。")
+        else:
             with st.form("assign_form"):
                 assignee = st.text_input("处理负责人")
                 assignee_email = st.text_input("负责人邮箱")
                 assign_note = st.text_area("转派备注")
                 assign_submit = st.form_submit_button("提交转派")
             if assign_submit and assignee:
-                workflow.assign(
-                    alert,
-                    actor=operator,
-                    actor_role=role,
-                    assignee=assignee,
-                    assignee_email=assignee_email,
-                    note=assign_note,
-                )
-                st.success("已完成转派。")
-                st.rerun()
+                try:
+                    workflow.assign(
+                        alert,
+                        actor=operator,
+                        actor_role=role,
+                        assignee=assignee,
+                        assignee_email=assignee_email,
+                        note=assign_note,
+                    )
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("已完成转派。")
+                    st.rerun()
 
-        with status_col:
-            _section_header("CASE RESOLUTION", "状态流转", "完成状态更新、人员修正和整改证据上传。")
+    with status_col:
+        _section_header("CASE RESOLUTION", "状态流转", "完成状态更新、人员修正和整改证据上传。")
+        if not can_update:
+            st.info("当前角色不能更新工单状态。")
+        else:
             with st.form("status_form"):
                 new_status = st.selectbox(
                     "新状态",
@@ -2268,23 +2388,28 @@ def render_review_desk(settings, repository, directory: PersonDirectory, evidenc
                         "identity_status": "resolved",
                         "identity_source": "manual_review",
                     }
-                workflow.update_status(
-                    alert,
-                    actor=operator,
-                    actor_role=role,
-                    new_status=new_status,
-                    note=resolution_note,
-                    corrected_identity=corrected_identity,
-                    remediation_snapshot_path=remediation_path,
-                    remediation_snapshot_url=remediation_url,
-                )
-                st.success("工单已更新。")
-                st.rerun()
+                try:
+                    workflow.update_status(
+                        alert,
+                        actor=operator,
+                        actor_role=role,
+                        new_status=new_status,
+                        note=resolution_note,
+                        corrected_identity=corrected_identity,
+                        remediation_snapshot_path=remediation_path,
+                        remediation_snapshot_url=remediation_url,
+                    )
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("工单已更新。")
+                    st.rerun()
 
 
 def render_camera_center(settings, repository, cameras: list[dict]) -> None:
     _section_header("DEVICE ORCHESTRATION", "摄像头管理", "统一观察设备在线态势，并维护运行配置。")
     summary = _camera_summary(settings, cameras)
+    can_manage_cameras = role_has_permission(_current_role(), "camera.edit")
     _render_metric_cards(
         [
             {"label": "已配置设备", "value": str(summary["configured"]), "note": "当前 runtime 中登记的摄像头总量", "foot": "Configured", "tone": "neutral"},
@@ -2304,6 +2429,9 @@ def render_camera_center(settings, repository, cameras: list[dict]) -> None:
 
     with form_col:
         _section_header("CONFIG EDITOR", "运行配置编辑", "针对单个摄像头维护接入源、位置、责任部门和默认人员。")
+        if not can_manage_cameras:
+            st.info("当前登录角色只能查看设备态势，不能修改运行中的摄像头配置。")
+            return
         existing_options = {"新建摄像头": None}
         for camera in settings.cameras:
             existing_options[f"{camera.camera_id} | {camera.camera_name}"] = camera
@@ -3923,7 +4051,9 @@ def render_review_desk(
         _section_header("DELIVERY LOG", "Notification Log", "Inspect outbound delivery attempts and the current notification status.")
         _render_table_surface(_notification_frame(notifications, language), empty_message="No notification records are available for this case yet.")
 
-    if role == "viewer":
+    can_assign = role_has_permission(role, "review.assign")
+    can_update = role_has_permission(role, "review.update")
+    if not can_assign and not can_update:
         st.info("Viewer mode is read-only. Assignment and case resolution actions are hidden.")
         return
 
@@ -3936,79 +4066,93 @@ def render_review_desk(
     assign_col, status_col = st.columns(2)
     with assign_col:
         _section_header("ASSIGNMENT", "Assignment", "Route the case to a specific owner and capture the transfer context.")
-        with st.form("assign_form_en"):
-            assignee = st.text_input("Assignee")
-            assignee_email = st.text_input("Assignee Email")
-            assign_note = st.text_area("Assignment Note")
-            assign_submit = st.form_submit_button("Submit Assignment")
-        if assign_submit and assignee:
-            workflow.assign(
-                alert,
-                actor=operator,
-                actor_role=role,
-                assignee=assignee,
-                assignee_email=assignee_email,
-                note=assign_note,
-            )
-            st.success("The case has been assigned.")
-            st.rerun()
+        if not can_assign:
+            st.info("Your current role cannot assign cases.")
+        else:
+            with st.form("assign_form_en"):
+                assignee = st.text_input("Assignee")
+                assignee_email = st.text_input("Assignee Email")
+                assign_note = st.text_area("Assignment Note")
+                assign_submit = st.form_submit_button("Submit Assignment")
+            if assign_submit and assignee:
+                try:
+                    workflow.assign(
+                        alert,
+                        actor=operator,
+                        actor_role=role,
+                        assignee=assignee,
+                        assignee_email=assignee_email,
+                        note=assign_note,
+                    )
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("The case has been assigned.")
+                    st.rerun()
 
     with status_col:
         _section_header("CASE RESOLUTION", "Case Resolution", "Update the case status, correct the person, and upload remediation evidence.")
-        status_values = list(STATUS_LABELS.keys())
-        current_status = alert.get("status")
-        status_index = status_values.index(current_status) if current_status in status_values else 0
-        with st.form("status_form_en"):
-            new_status = st.selectbox(
-                "New Status",
-                options=status_values,
-                format_func=lambda value: _status_label(value, language),
-                index=status_index,
-            )
-            corrected_person_label = st.selectbox("Resolved Person", list(person_labels.keys()))
-            resolution_note = st.text_area("Resolution Note")
-            remediation_file = st.file_uploader("Remediation Snapshot", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
-            status_submit = st.form_submit_button("Update Case")
-        if status_submit:
-            remediation_path = None
-            remediation_url = None
-            if remediation_file is not None:
-                extension = Path(remediation_file.name).suffix or ".jpg"
-                remediation_path, remediation_url = evidence_store.save_bytes(
-                    alert.get("camera_id") or "manual",
-                    remediation_file.getvalue(),
-                    f"{alert['alert_id']}_remediation",
-                    datetime.now(tz=UTC),
-                    category="remediation",
-                    extension=extension,
-                    content_type=remediation_file.type or "image/jpeg",
+        if not can_update:
+            st.info("Your current role cannot update case status.")
+        else:
+            status_values = list(STATUS_LABELS.keys())
+            current_status = alert.get("status")
+            status_index = status_values.index(current_status) if current_status in status_values else 0
+            with st.form("status_form_en"):
+                new_status = st.selectbox(
+                    "New Status",
+                    options=status_values,
+                    format_func=lambda value: _status_label(value, language),
+                    index=status_index,
                 )
-            corrected_identity = None
-            selected_person = person_labels.get(corrected_person_label)
-            if selected_person:
-                corrected_identity = {
-                    "person_id": selected_person.get("person_id"),
-                    "person_name": selected_person.get("name"),
-                    "employee_id": selected_person.get("employee_id"),
-                    "department": selected_person.get("department"),
-                    "team": selected_person.get("team"),
-                    "role": selected_person.get("role"),
-                    "phone": selected_person.get("phone"),
-                    "identity_status": "resolved",
-                    "identity_source": "manual_review",
-                }
-            workflow.update_status(
-                alert,
-                actor=operator,
-                actor_role=role,
-                new_status=new_status,
-                note=resolution_note,
-                corrected_identity=corrected_identity,
-                remediation_snapshot_path=remediation_path,
-                remediation_snapshot_url=remediation_url,
-            )
-            st.success("The case has been updated.")
-            st.rerun()
+                corrected_person_label = st.selectbox("Resolved Person", list(person_labels.keys()))
+                resolution_note = st.text_area("Resolution Note")
+                remediation_file = st.file_uploader("Remediation Snapshot", type=["png", "jpg", "jpeg"], accept_multiple_files=False)
+                status_submit = st.form_submit_button("Update Case")
+            if status_submit:
+                remediation_path = None
+                remediation_url = None
+                if remediation_file is not None:
+                    extension = Path(remediation_file.name).suffix or ".jpg"
+                    remediation_path, remediation_url = evidence_store.save_bytes(
+                        alert.get("camera_id") or "manual",
+                        remediation_file.getvalue(),
+                        f"{alert['alert_id']}_remediation",
+                        datetime.now(tz=UTC),
+                        category="remediation",
+                        extension=extension,
+                        content_type=remediation_file.type or "image/jpeg",
+                    )
+                corrected_identity = None
+                selected_person = person_labels.get(corrected_person_label)
+                if selected_person:
+                    corrected_identity = {
+                        "person_id": selected_person.get("person_id"),
+                        "person_name": selected_person.get("name"),
+                        "employee_id": selected_person.get("employee_id"),
+                        "department": selected_person.get("department"),
+                        "team": selected_person.get("team"),
+                        "role": selected_person.get("role"),
+                        "phone": selected_person.get("phone"),
+                        "identity_status": "resolved",
+                        "identity_source": "manual_review",
+                    }
+                try:
+                    workflow.update_status(
+                        alert,
+                        actor=operator,
+                        actor_role=role,
+                        new_status=new_status,
+                        note=resolution_note,
+                        corrected_identity=corrected_identity,
+                        remediation_snapshot_path=remediation_path,
+                        remediation_snapshot_url=remediation_url,
+                    )
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("The case has been updated.")
+                    st.rerun()
 
 
 def render_camera_center(settings, repository, cameras: list[dict], language: str = "zh") -> None:
@@ -4017,6 +4161,7 @@ def render_camera_center(settings, repository, cameras: list[dict], language: st
 
     _section_header("DEVICE ORCHESTRATION", "Camera Center", "Inspect online posture, update stream metadata, and keep runtime camera configuration clean.")
     summary = _camera_summary(settings, cameras)
+    can_manage_cameras = role_has_permission(_current_role(), "camera.edit")
     _render_metric_cards(
         [
             {"label": "Configured Cameras", "value": str(summary["configured"]), "note": "Total cameras registered in the runtime configuration", "foot": "Configured", "tone": "neutral"},
@@ -4036,6 +4181,9 @@ def render_camera_center(settings, repository, cameras: list[dict], language: st
 
     with form_col:
         _section_header("CONFIG EDITOR", "Runtime Config Editor", "Maintain source, location, ownership, and default routing for a single camera entry.")
+        if not can_manage_cameras:
+            st.info("Your current role can review camera posture, but cannot modify runtime camera configuration.")
+            return
         existing_options = {"New Camera": None}
         for camera in settings.cameras:
             existing_options[f"{camera.camera_id} | {camera.camera_name}"] = camera
@@ -4217,11 +4365,6 @@ def main() -> None:
     _inject_theme_runtime_overrides()
 
     settings = load_settings()
-    repository = build_repository(settings)
-    directory = PersonDirectory(settings)
-    evidence_store = EvidenceStore(settings)
-    notifier = NotificationService(settings, repository)
-
     language = st.sidebar.selectbox(
         "语言 / Language",
         list(LANGUAGE_OPTIONS.keys()),
@@ -4229,13 +4372,17 @@ def main() -> None:
         format_func=lambda value: LANGUAGE_OPTIONS[value],
     )
     _render_sidebar_brand(language)
-    role = st.sidebar.selectbox(
-        _txt(language, "当前角色", "Role"),
-        list(ROLE_OPTIONS.keys()),
-        format_func=lambda value: f"{_role_label(value, language)} / {value}",
-    )
-    operator = st.sidebar.text_input(_txt(language, "当前操作人", "Operator"), value="demo.operator")
-    allowed_pages = ROLE_PAGES[role]
+    identity = _require_trusted_identity(language)
+    _render_sidebar_identity(identity, language)
+
+    repository = build_repository(settings)
+    directory = PersonDirectory(settings)
+    evidence_store = EvidenceStore(settings)
+    notifier = NotificationService(settings, repository)
+
+    role = identity.role
+    operator = identity.username
+    allowed_pages = ROLE_PAGES.get(role, ROLE_PAGES["viewer"])
     page = st.sidebar.radio(_txt(language, "页面", "Pages"), allowed_pages, format_func=lambda value: _page_meta(value, language)["nav"])
     auto_refresh = st.sidebar.checkbox(_txt(language, "自动刷新", "Auto Refresh"), value=page == "总览")
     refresh_seconds = st.sidebar.slider(_txt(language, "刷新秒数", "Refresh Interval"), min_value=5, max_value=60, value=10, step=5)

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,7 @@ from helmet_monitoring.core.config import (
     SupabaseSettings,
     TrackingSettings,
 )
+from helmet_monitoring.services.auth import hash_password
 from helmet_monitoring.services.readiness import collect_readiness_report, ensure_workspace_scaffold
 
 
@@ -100,21 +102,34 @@ class ReadinessTest(unittest.TestCase):
             self.assertIn("storage_privacy", checks)
             self.assertEqual(checks["storage_privacy"]["status"], "warn")
 
-    def test_collect_readiness_report_warns_when_demo_console_auth_is_present(self) -> None:
+    def test_collect_readiness_report_requires_trusted_console_auth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             (root / "configs").mkdir(parents=True, exist_ok=True)
             (root / "configs" / "runtime.json").write_text("{}", encoding="utf-8")
-            (root / "app.py").write_text(
-                'role = st.sidebar.selectbox("当前角色", ["viewer"])\n'
-                'operator = st.sidebar.text_input("当前操作人", value="demo.operator")\n',
-                encoding="utf-8",
-            )
+            (root / "app.py").write_text("pass\n", encoding="utf-8")
             settings = build_settings(root)
             report = collect_readiness_report(settings, repo_root=root)
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("console_auth", checks)
-            self.assertEqual(checks["console_auth"]["status"], "warn")
+            self.assertEqual(checks["console_auth"]["status"], "missing")
+
+    def test_collect_readiness_report_accepts_configured_console_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "configs").mkdir(parents=True, exist_ok=True)
+            (root / "configs" / "runtime.json").write_text("{}", encoding="utf-8")
+            (root / "app.py").write_text("pass\n", encoding="utf-8")
+            settings = build_settings(root)
+            env = {
+                "HELMET_AUTH_ADMIN_USERNAME": "admin",
+                "HELMET_AUTH_ADMIN_PASSWORD_HASH": hash_password("AdminPass!2026"),
+            }
+            with patch.dict("os.environ", env, clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertIn("console_auth", checks)
+            self.assertEqual(checks["console_auth"]["status"], "ready")
 
     def test_collect_readiness_report_warns_when_runtime_config_contains_inline_camera_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

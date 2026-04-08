@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from helmet_monitoring.core.config import AppSettings, REPO_ROOT
+from helmet_monitoring.services.auth import auth_configuration_summary
 
 
 SUPPORTED_PYTHON_MINORS = {(3, 10), (3, 11)}
@@ -62,15 +63,6 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
-
-
-def _app_uses_demo_console_auth(app_path: Path) -> bool:
-    source = _read_text(app_path)
-    if not source:
-        return False
-    has_role_selector = "st.sidebar.selectbox" in source and '"当前角色"' in source
-    has_demo_operator = "st.sidebar.text_input" in source and "demo.operator" in source
-    return has_role_selector and has_demo_operator
 
 
 def _app_allows_raw_camera_source_editing(app_path: Path) -> bool:
@@ -176,6 +168,7 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     smtp_ready = settings.notifications.is_email_configured
     openai_ready = bool(os.getenv("OPENAI_API_KEY", "").strip())
     deepseek_ready = bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
+    auth_summary = auth_configuration_summary()
 
     if python_minor == RECOMMENDED_PYTHON_MINOR:
         checks.append(ReadinessCheck("python_runtime", "ready", f"Python {sys.version.split()[0]} detected (recommended runtime)."))
@@ -202,16 +195,23 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
         checks.append(ReadinessCheck("runtime_config", "missing", f"Missing runtime config: {config_path}"))
 
     if app_path.exists():
-        if _app_uses_demo_console_auth(app_path):
+        if auth_summary["configured"]:
+            role_text = ", ".join(str(role) for role in auth_summary["roles"]) or "viewer"
             checks.append(
                 ReadinessCheck(
                     "console_auth",
-                    "warn",
-                    "Dashboard still uses sidebar role/operator demo controls instead of trusted authentication.",
+                    "ready",
+                    f"Trusted console authentication configured with {auth_summary['enabled_users']} account(s); roles={role_text}.",
                 )
             )
         else:
-            checks.append(ReadinessCheck("console_auth", "ready", "Dashboard does not expose demo role-switch controls."))
+            checks.append(
+                ReadinessCheck(
+                    "console_auth",
+                    "missing",
+                    "Trusted console authentication is not configured. Set HELMET_AUTH_ADMIN_* or HELMET_AUTH_USERS_JSON.",
+                )
+            )
 
         camera_secret_issues = _config_camera_secret_issues(config_path)
         if camera_secret_issues:
@@ -383,8 +383,8 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     next_actions: list[str] = []
     if python_minor not in SUPPORTED_PYTHON_MINORS:
         next_actions.append("Rebuild the project virtual environment with Python 3.11 (preferred) or Python 3.10.")
-    if app_path.exists() and _app_uses_demo_console_auth(app_path):
-        next_actions.append("Replace the dashboard sidebar role/operator controls with trusted authentication and server-side authorization.")
+    if not auth_summary["configured"]:
+        next_actions.append("Configure HELMET_AUTH_ADMIN_* or HELMET_AUTH_USERS_JSON so the dashboard uses trusted authentication.")
     camera_secret_issues = _config_camera_secret_issues(config_path)
     if camera_secret_issues:
         next_actions.append("Move camera credentials/tokens out of runtime.json into env placeholders or a secret manager.")

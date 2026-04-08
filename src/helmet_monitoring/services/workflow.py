@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from helmet_monitoring.core.schemas import AlertActionRecord, HardCaseRecord, utc_now
+from helmet_monitoring.services.auth import require_permission
 from helmet_monitoring.services.model_governance import sink_feedback_case
 from helmet_monitoring.storage.repository import AlertRepository
 
@@ -50,6 +51,7 @@ class AlertWorkflowService:
         )
 
     def assign(self, alert: dict, *, actor: str, actor_role: str, assignee: str, assignee_email: str, note: str | None) -> None:
+        require_permission(actor_role, "review.assign")
         self.repository.update_alert(
             alert["alert_id"],
             {
@@ -80,6 +82,7 @@ class AlertWorkflowService:
         remediation_snapshot_path: str | None = None,
         remediation_snapshot_url: str | None = None,
     ) -> None:
+        require_permission(actor_role, "review.update")
         now = utc_now()
         update_payload = {
             "status": new_status,
