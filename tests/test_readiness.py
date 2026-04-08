@@ -35,6 +35,13 @@ from helmet_monitoring.services.auth import hash_password
 from helmet_monitoring.services.readiness import collect_readiness_report, ensure_workspace_scaffold
 
 
+def isolated_auth_env(root: Path) -> dict[str, str]:
+    return {
+        "HELMET_AUTH_USERS_FILE": str(root / "artifacts" / "runtime" / "ops" / "auth_users.json"),
+        "HELMET_AUTH_ATTEMPTS_FILE": str(root / "artifacts" / "runtime" / "ops" / "auth_attempts.json"),
+    }
+
+
 def build_settings(root: Path) -> AppSettings:
     return AppSettings(
         repository_backend="local",
@@ -80,7 +87,8 @@ class ReadinessTest(unittest.TestCase):
             root = Path(temp_dir)
             settings = build_settings(root)
             ensure_workspace_scaffold(settings, repo_root=root)
-            report = collect_readiness_report(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
             self.assertFalse(report["model"]["exists"])
             self.assertEqual(report["cameras"]["enabled"], 0)
             self.assertTrue(any(item["status"] == "missing" for item in report["checks"]))
@@ -97,7 +105,8 @@ class ReadinessTest(unittest.TestCase):
                 supabase=SupabaseSettings(url="https://example.supabase.co", service_role_key="service-role"),
             )
             ensure_workspace_scaffold(settings, repo_root=root)
-            report = collect_readiness_report(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("storage_privacy", checks)
             self.assertEqual(checks["storage_privacy"]["status"], "warn")
@@ -109,7 +118,8 @@ class ReadinessTest(unittest.TestCase):
             (root / "configs" / "runtime.json").write_text("{}", encoding="utf-8")
             (root / "app.py").write_text("pass\n", encoding="utf-8")
             settings = build_settings(root)
-            report = collect_readiness_report(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("console_auth", checks)
             self.assertEqual(checks["console_auth"]["status"], "missing")
@@ -122,6 +132,7 @@ class ReadinessTest(unittest.TestCase):
             (root / "app.py").write_text("pass\n", encoding="utf-8")
             settings = build_settings(root)
             env = {
+                **isolated_auth_env(root),
                 "HELMET_AUTH_ADMIN_USERNAME": "admin",
                 "HELMET_AUTH_ADMIN_PASSWORD_HASH": hash_password("AdminPass!2026"),
             }
@@ -155,7 +166,8 @@ class ReadinessTest(unittest.TestCase):
                     ),
                 ),
             )
-            report = collect_readiness_report(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("camera_secret_refs", checks)
             self.assertEqual(checks["camera_secret_refs"]["status"], "warn")

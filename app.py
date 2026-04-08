@@ -19,10 +19,22 @@ if str(SRC_ROOT) not in sys.path:
 
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.auth import (
+    AuthAccount,
     TrustedIdentity,
     auth_configuration_summary,
     authenticate_user,
+    clear_login_failures,
+    delete_managed_auth_account,
+    get_login_lockout_state,
+    hash_password,
+    list_login_lockout_states,
+    load_auth_policy,
+    load_auth_accounts,
+    load_bootstrap_admin_account,
+    load_managed_auth_accounts,
+    register_login_failure,
     role_has_permission,
+    upsert_managed_auth_account,
 )
 from helmet_monitoring.services.notifier import NotificationService
 from helmet_monitoring.services.operations import operations_paths
@@ -55,12 +67,14 @@ ROLE_OPTIONS = {
     "viewer": {"zh": "只读访客", "en": "Viewer"},
 }
 ROLE_PAGES = {
-    "admin": ["总览", "人工复核台", "摄像头管理", "统计报表", "通知中心", "Hard Cases"],
+    "admin": ["总览", "人工复核台", "摄像头管理", "统计报表", "通知中心", "Hard Cases", "Access Admin"],
     "safety_manager": ["总览", "人工复核台", "统计报表", "通知中心", "Hard Cases"],
     "team_lead": ["总览", "人工复核台", "统计报表"],
     "viewer": ["总览", "统计报表"],
 }
 AUTH_SESSION_KEY = "trusted_identity"
+AUTH_SESSION_LAST_SEEN_KEY = "trusted_identity_last_seen"
+AUTH_SESSION_NOTICE_KEY = "trusted_identity_notice"
 PAGE_META = {
     "总览": {
         "kicker": "INDUSTRIAL SAFETY INTELLIGENCE",
@@ -220,6 +234,15 @@ PAGE_META_RUNTIME_I18N = {
         },
         "nav": {"zh": "回流池", "en": "Hard Cases"},
     },
+    "Access Admin": {
+        "kicker": "ACCESS CONTROL",
+        "title": {"zh": "账号与会话管理", "en": "Access Administration"},
+        "description": {
+            "zh": "集中维护控制台账号、查看锁定状态，并统一管理登录安全策略。",
+            "en": "Manage console accounts, review lockout states, and operate the sign-in security baseline.",
+        },
+        "nav": {"zh": "账号管理", "en": "Access Admin"},
+    },
 }
 
 
@@ -265,6 +288,32 @@ def _role_label(role: str, language: str) -> str:
     return ROLE_LABELS.get(role, ROLE_LABELS["viewer"])[language]
 
 
+def _parse_session_timestamp(value: object) -> datetime | None:
+    if not value:
+        return None
+    normalized = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _set_auth_notice(message: str) -> None:
+    st.session_state[AUTH_SESSION_NOTICE_KEY] = message
+
+
+def _pop_auth_notice() -> str | None:
+    notice = st.session_state.get(AUTH_SESSION_NOTICE_KEY)
+    if not isinstance(notice, str) or not notice.strip():
+        st.session_state.pop(AUTH_SESSION_NOTICE_KEY, None)
+        return None
+    st.session_state.pop(AUTH_SESSION_NOTICE_KEY, None)
+    return notice
+
+
 def _current_identity() -> TrustedIdentity | None:
     payload = st.session_state.get(AUTH_SESSION_KEY)
     if not isinstance(payload, dict):
@@ -283,13 +332,17 @@ def _current_role() -> str:
 
 def _set_current_identity(identity: TrustedIdentity) -> None:
     st.session_state[AUTH_SESSION_KEY] = identity.to_record()
+    st.session_state[AUTH_SESSION_LAST_SEEN_KEY] = datetime.now(tz=UTC).isoformat()
 
 
 def _clear_current_identity() -> None:
     st.session_state.pop(AUTH_SESSION_KEY, None)
+    st.session_state.pop(AUTH_SESSION_LAST_SEEN_KEY, None)
 
 
 def _render_sidebar_identity(identity: TrustedIdentity, language: str) -> None:
+    policy = load_auth_policy()
+    timeout_minutes = max(1, policy.session_timeout_seconds // 60)
     st.sidebar.markdown(
         f"""
         <div class="sidebar-brand" style="padding-top:0.82rem;">
@@ -298,7 +351,8 @@ def _render_sidebar_identity(identity: TrustedIdentity, language: str) -> None:
             <div class="sidebar-copy">
                 {html.escape(_txt(language, "账号", "Username"))}: <strong>{html.escape(identity.username)}</strong><br>
                 {html.escape(_txt(language, "角色", "Role"))}: <strong>{html.escape(_role_label(identity.role, language))}</strong><br>
-                {html.escape(_txt(language, "邮箱", "Email"))}: <strong>{html.escape(identity.email or "--")}</strong>
+                {html.escape(_txt(language, "邮箱", "Email"))}: <strong>{html.escape(identity.email or "--")}</strong><br>
+                {html.escape(_txt(language, "空闲超时", "Idle Timeout"))}: <strong>{timeout_minutes} min</strong>
             </div>
         </div>
         """,
@@ -309,7 +363,28 @@ def _render_sidebar_identity(identity: TrustedIdentity, language: str) -> None:
         st.rerun()
 
 
+def _expire_session_if_idle(language: str) -> None:
+    identity = _current_identity()
+    if identity is None:
+        return
+    last_seen = _parse_session_timestamp(st.session_state.get(AUTH_SESSION_LAST_SEEN_KEY))
+    policy = load_auth_policy()
+    now = datetime.now(tz=UTC)
+    if last_seen is not None and (now - last_seen).total_seconds() > policy.session_timeout_seconds:
+        _clear_current_identity()
+        _set_auth_notice(
+            _txt(
+                language,
+                "登录会话因长时间无操作已过期，请重新登录。",
+                "Your session expired after being idle for too long. Please sign in again.",
+            )
+        )
+        return
+    st.session_state[AUTH_SESSION_LAST_SEEN_KEY] = now.isoformat()
+
+
 def _require_trusted_identity(language: str) -> TrustedIdentity:
+    _expire_session_if_idle(language)
     configured = auth_configuration_summary()
     identity = _current_identity()
     if configured["configured"] and identity is not None:
@@ -335,17 +410,55 @@ def _require_trusted_identity(language: str) -> TrustedIdentity:
     login_col, info_col = st.columns((1.05, 0.95))
     with login_col:
         st.markdown(f"### {_txt(language, '控制台登录', 'Console Sign In')}")
+        notice = _pop_auth_notice()
+        if notice:
+            st.warning(notice)
         with st.form("console_login_form"):
             username = st.text_input(_txt(language, "账号", "Username"))
             password = st.text_input(_txt(language, "密码", "Password"), type="password")
             submit = st.form_submit_button(_txt(language, "登录控制台", "Sign In"))
         if submit:
-            authenticated = authenticate_user(username, password)
-            if authenticated is None:
-                st.error(_txt(language, "账号或密码错误。", "Invalid username or password."))
+            normalized_username = str(username).strip().lower()
+            policy = load_auth_policy()
+            if not normalized_username or not password:
+                st.error(_txt(language, "请输入账号和密码。", "Enter both username and password."))
             else:
-                _set_current_identity(authenticated)
-                st.rerun()
+                lockout_state = get_login_lockout_state(normalized_username)
+                if lockout_state.remaining_seconds() > 0:
+                    minutes = max(1, (lockout_state.remaining_seconds() + 59) // 60)
+                    st.error(
+                        _txt(
+                            language,
+                            f"该账号已被临时锁定，请约 {minutes} 分钟后再试。",
+                            f"This account is temporarily locked. Try again in about {minutes} minute(s).",
+                        )
+                    )
+                else:
+                    authenticated = authenticate_user(normalized_username, password)
+                    if authenticated is None:
+                        failed_state = register_login_failure(normalized_username)
+                        remaining_attempts = max(0, policy.max_failed_attempts - failed_state.failed_attempts)
+                        if failed_state.remaining_seconds() > 0:
+                            minutes = max(1, (failed_state.remaining_seconds() + 59) // 60)
+                            st.error(
+                                _txt(
+                                    language,
+                                    f"连续登录失败次数过多，账号已锁定约 {minutes} 分钟。",
+                                    f"Too many failed sign-in attempts. The account is locked for about {minutes} minute(s).",
+                                )
+                            )
+                        else:
+                            st.error(
+                                _txt(
+                                    language,
+                                    f"账号或密码错误，还可尝试 {remaining_attempts} 次。",
+                                    f"Invalid username or password. {remaining_attempts} attempt(s) remaining before lockout.",
+                                )
+                            )
+                    else:
+                        clear_login_failures(normalized_username)
+                        _set_current_identity(authenticated)
+                        st.rerun()
     with info_col:
         st.markdown(f"### {_txt(language, '访问控制', 'Access Control')}")
         st.info(
@@ -360,6 +473,13 @@ def _require_trusted_identity(language: str) -> TrustedIdentity:
                 language,
                 f"当前已配置 {configured['enabled_users']} 个账户，角色覆盖：{', '.join(configured['roles']) or 'viewer'}。",
                 f"{configured['enabled_users']} account(s) configured. Roles: {', '.join(configured['roles']) or 'viewer'}.",
+            )
+        )
+        st.caption(
+            _txt(
+                language,
+                f"失败 {configured['max_failed_attempts']} 次后锁定 {configured['lockout_seconds'] // 60} 分钟，空闲会话 {configured['session_timeout_seconds'] // 60} 分钟后超时。",
+                f"Lock after {configured['max_failed_attempts']} failed attempts for {configured['lockout_seconds'] // 60} minute(s); idle sessions expire after {configured['session_timeout_seconds'] // 60} minute(s).",
             )
         )
     st.stop()
@@ -2826,6 +2946,206 @@ def _render_page_hero(
     )
 
 
+def render_access_admin(settings, language: str = "zh") -> None:
+    if not role_has_permission(_current_role(), "account.manage"):
+        st.error(_txt(language, "当前账号没有访问账号管理页的权限。", "Your current account cannot access the account administration page."))
+        return
+
+    summary = auth_configuration_summary()
+    policy = load_auth_policy()
+    all_accounts = load_auth_accounts()
+    managed_accounts = load_managed_auth_accounts()
+    bootstrap_admin = load_bootstrap_admin_account()
+    lockouts = list_login_lockout_states()
+    source_labels = {
+        "bootstrap_admin": _txt(language, "环境管理员", "Bootstrap Admin"),
+        "env_json": _txt(language, "环境清单", "Env JSON"),
+        "managed_file": _txt(language, "本地托管", "Managed File"),
+    }
+
+    _section_header(
+        "ACCESS CONTROL",
+        _txt(language, "账号与会话管理", "Access Administration"),
+        _txt(
+            language,
+            "集中维护控制台账号、登录锁定状态与会话安全策略，方便后续客户环境持续运营。",
+            "Manage console accounts, lockout states, and session policy from one operating surface.",
+        ),
+    )
+    _render_metric_cards(
+        [
+            {
+                "label": _txt(language, "总账号数", "Total Accounts"),
+                "value": str(summary["enabled_users"]),
+                "note": _txt(language, "当前可用于控制台登录的全部账号数", "All accounts currently available for console sign-in"),
+                "foot": "Accounts",
+                "tone": "neutral",
+            },
+            {
+                "label": _txt(language, "托管账号", "Managed Accounts"),
+                "value": str(summary["managed_users"]),
+                "note": _txt(language, "由本地账号文件托管、可在页面内维护的账号数", "Accounts stored in the managed auth file and editable in this page"),
+                "foot": "Managed",
+                "tone": "positive",
+            },
+            {
+                "label": _txt(language, "锁定阈值", "Lockout Threshold"),
+                "value": str(policy.max_failed_attempts),
+                "note": _txt(language, "单账号连续登录失败达到该次数后触发临时锁定", "Failed sign-in attempts before temporary account lockout"),
+                "foot": "Attempts",
+                "tone": "warning",
+            },
+            {
+                "label": _txt(language, "会话超时", "Session Timeout"),
+                "value": f"{max(1, policy.session_timeout_seconds // 60)} min",
+                "note": _txt(language, "控制台空闲达到该时长后自动退出登录", "Idle session duration before the console signs the user out"),
+                "foot": "Idle Session",
+                "tone": "warning",
+            },
+        ]
+    )
+
+    inventory_col, form_col = st.columns((1.25, 1))
+    with inventory_col:
+        _section_header(
+            "ACCOUNT INVENTORY",
+            _txt(language, "账号清单", "Account Inventory"),
+            _txt(language, "把账号来源、角色和邮箱压缩成一张可读表，便于快速核对权限边界。", "Review identity source, role, and contact details in one readable account inventory."),
+        )
+        account_rows = [
+            {
+                _txt(language, "账号", "Username"): account.username,
+                _txt(language, "显示名", "Display Name"): account.display_name,
+                _txt(language, "角色", "Role"): _role_label(account.role, language),
+                _txt(language, "邮箱", "Email"): account.email or "--",
+                _txt(language, "来源", "Source"): source_labels.get(account.source, account.source),
+            }
+            for account in all_accounts
+        ]
+        _render_table_surface(
+            pd.DataFrame(account_rows) if account_rows else pd.DataFrame(),
+            empty_message=_txt(language, "当前还没有可用账号。", "No accounts are available yet."),
+        )
+        st.caption(f"{_txt(language, '托管账号文件', 'Managed Account File')}: {summary['managed_users_path']}")
+
+        _section_header(
+            "LOCKOUT WATCH",
+            _txt(language, "锁定监控", "Lockout Watch"),
+            _txt(language, "查看登录失败累计和当前锁定剩余时间，方便管理员及时解锁。", "Review failed attempts and remaining lockout time so administrators can unlock accounts quickly."),
+        )
+        lockout_rows = [
+            {
+                _txt(language, "账号", "Username"): state.username,
+                _txt(language, "失败次数", "Failed Attempts"): state.failed_attempts,
+                _txt(language, "锁定到", "Locked Until"): _format_timestamp(state.locked_until.isoformat() if state.locked_until else None),
+                _txt(language, "剩余秒数", "Remaining Seconds"): state.remaining_seconds(),
+            }
+            for state in lockouts
+        ]
+        _render_table_surface(
+            pd.DataFrame(lockout_rows) if lockout_rows else pd.DataFrame(),
+            empty_message=_txt(language, "当前没有处于锁定或预警中的账号。", "No accounts are currently locked or approaching lockout."),
+        )
+
+    with form_col:
+        _section_header(
+            "MANAGED EDITOR",
+            _txt(language, "托管账号编辑", "Managed Account Editor"),
+            _txt(language, "创建或更新本地托管账号；留空密码时会保留旧密码哈希。", "Create or update managed accounts. Leave the password blank to keep the existing hash."),
+        )
+        existing_options = {_txt(language, "新建托管账号", "New Managed Account"): None}
+        for account in managed_accounts:
+            existing_options[f"{account.username} | {_role_label(account.role, language)}"] = account
+        selected_label = st.selectbox(_txt(language, "编辑对象", "Target"), list(existing_options.keys()))
+        current = existing_options[selected_label]
+        current_role = current.role if current else "viewer"
+        role_options = list(ROLE_OPTIONS.keys())
+        role_index = role_options.index(current_role) if current_role in role_options else role_options.index("viewer")
+
+        with st.form("managed_auth_account_form"):
+            username_value = st.text_input("username", value=current.username if current else "")
+            display_name = st.text_input("display_name", value=current.display_name if current else "")
+            role_value = st.selectbox(
+                "role",
+                role_options,
+                index=role_index,
+                format_func=lambda value: f"{_role_label(value, language)} / {value}",
+            )
+            email = st.text_input("email", value=current.email if current else "")
+            password = st.text_input(
+                _txt(language, "新密码", "New Password"),
+                type="password",
+                help=_txt(language, "新建账号必须填写。编辑已有账号时留空代表保留原密码。", "Required for new accounts. Leave blank when editing to keep the current password."),
+            )
+            confirm_password = st.text_input(_txt(language, "确认密码", "Confirm Password"), type="password")
+            save_submit = st.form_submit_button(_txt(language, "保存账号", "Save Account"))
+
+        if save_submit:
+            normalized_username = username_value.strip().lower()
+            if not normalized_username:
+                st.error(_txt(language, "username 不能为空。", "username is required."))
+            elif not display_name.strip():
+                st.error(_txt(language, "display_name 不能为空。", "display_name is required."))
+            elif password and password != confirm_password:
+                st.error(_txt(language, "两次输入的密码不一致。", "The password confirmation does not match."))
+            elif current is None and not password:
+                st.error(_txt(language, "新建账号必须设置密码。", "A new account must include a password."))
+            elif bootstrap_admin is not None and normalized_username == bootstrap_admin.username and (current is None or current.username != normalized_username):
+                st.error(_txt(language, "该用户名已被环境管理员账号占用，请换一个名称。", "That username is already reserved by the bootstrap admin account."))
+            else:
+                password_hash = current.password_hash if current is not None and not password else hash_password(password)
+                upsert_managed_auth_account(
+                    AuthAccount(
+                        username=normalized_username,
+                        role=role_value,
+                        display_name=display_name.strip(),
+                        password_hash=password_hash,
+                        email=email.strip(),
+                    )
+                )
+                if current is not None and current.username != normalized_username:
+                    delete_managed_auth_account(current.username)
+                    clear_login_failures(current.username)
+                st.success(_txt(language, "托管账号已保存。", "Managed account saved."))
+                st.rerun()
+
+        if current is not None:
+            st.divider()
+            st.caption(_txt(language, "删除前请确认该账号不是客户正在使用的在线账号。", "Confirm the account is not actively in use before deleting it."))
+            delete_confirm = st.checkbox(_txt(language, "确认删除当前托管账号", "Confirm delete current managed account"), key="managed_account_delete_confirm")
+            if st.button(
+                _txt(language, "删除当前账号", "Delete Current Account"),
+                disabled=not delete_confirm,
+                use_container_width=True,
+            ):
+                delete_managed_auth_account(current.username)
+                clear_login_failures(current.username)
+                st.success(_txt(language, "托管账号已删除。", "Managed account deleted."))
+                st.rerun()
+
+        if lockouts:
+            st.divider()
+            unlock_username = st.selectbox(
+                _txt(language, "解锁账号", "Unlock Account"),
+                [state.username for state in lockouts],
+                key="unlock_account_select",
+            )
+            if st.button(_txt(language, "清除锁定状态", "Clear Lockout"), use_container_width=True):
+                clear_login_failures(unlock_username)
+                st.success(_txt(language, "账号锁定状态已清除。", "The selected account lockout has been cleared."))
+                st.rerun()
+
+        if bootstrap_admin is not None:
+            st.divider()
+            st.info(
+                _txt(
+                    language,
+                    "环境管理员账号来自 .env，只能在环境配置里改用户名/密码，页面内不直接改写。",
+                    "The bootstrap admin comes from .env and remains read-only in the page; update its username or password in the environment file.",
+                )
+            )
+
+
 def render_notification_center(settings, repository, notifier: NotificationService, language: str = "zh") -> None:
     _section_header(
         _txt(language, "通知基础设施", "DELIVERY INFRA"),
@@ -4459,6 +4779,8 @@ def main() -> None:
         render_notification_center(settings, repository, notifier, language)
     elif page == "Hard Cases":
         render_hard_cases(repository, language)
+    elif page == "Access Admin":
+        render_access_admin(settings, language)
 
     _render_platform_configuration(settings, language)
 
