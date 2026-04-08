@@ -2,24 +2,18 @@
   "repository_backend": "supabase",
   "model": {
     "path": "artifacts/training_runs/helmet_project/cpu_test3/weights/best.pt",
-    "confidence": 0.45,
+    "confidence": 0.35,
     "imgsz": 640,
     "device": "cpu",
-    "violation_labels": [
-      "no_helmet",
-      "person"
-    ],
-    "safe_labels": [
-      "helmet",
-      "hat"
-    ]
+    "violation_labels": ["no_helmet", "person"],
+    "safe_labels": ["helmet", "hat"]
   },
   "event_rules": {
-    "alert_frames": 6,
-    "dedupe_seconds": 300,
+    "alert_frames": 1,
+    "dedupe_seconds": 20,
     "match_distance_pixels": 120,
     "max_track_age_seconds": 2.5,
-    "min_confidence_for_alert": 0.5
+    "min_confidence_for_alert": 0.35
   },
   "persistence": {
     "snapshot_dir": "artifacts/captures",
@@ -30,15 +24,15 @@
     "keep_local_copy": true
   },
   "monitoring": {
-    "frame_stride": 3,
-    "camera_retry_seconds": 1.5,
-    "heartbeat_interval_seconds": 10.0,
+    "frame_stride": 1,
+    "camera_retry_seconds": 2.0,
+    "heartbeat_interval_seconds": 5.0,
     "max_frames": 0
   },
   "identity": {
     "provider": "hybrid",
     "registry_path": "configs/person_registry.json",
-    "refresh_seconds": 60,
+    "refresh_seconds": 20,
     "unknown_person_name": "Unknown"
   },
   "face_recognition": {
@@ -52,7 +46,7 @@
   },
   "ocr": {
     "enabled": true,
-    "provider": "auto",
+    "provider": "rapidocr",
     "min_confidence": 0.35,
     "badge_roi_y_start": 0.22,
     "badge_roi_y_end": 0.72,
@@ -75,7 +69,7 @@
   },
   "governance": {
     "enabled": true,
-    "min_bbox_area": 3600,
+    "min_bbox_area": 2500,
     "ignore_zones": {},
     "whitelist_camera_ids": [],
     "night_start_hour": 19,
@@ -84,7 +78,7 @@
     "review_confidence_margin": 0.08
   },
   "clip": {
-    "enabled": true,
+    "enabled": false,
     "pre_seconds": 5,
     "post_seconds": 5,
     "fps": 12.0,
@@ -114,23 +108,7 @@
       "workshop_name": "Safety Lab",
       "zone_name": "Desktop",
       "responsible_department": "Safety",
-      "alert_emails": [],
-      "enabled": false
-    },
-    {
-      "camera_id": "cam-rtsp-001",
-      "camera_name": "Phone Stream Camera",
-      "source": "${HELMET_MONITOR_STREAM_URL:rtmp://rtmp-gateway:1935/live/stream}",
-      "location": "Factory RTSP Zone",
-      "department": "Safety",
-      "site_name": "Demo Site",
-      "building_name": "Workshop Building",
-      "floor_name": "Floor 1",
-      "workshop_name": "Line A",
-      "zone_name": "Gate 1",
-      "responsible_department": "Safety",
-      "alert_emails": [],
-      "enabled": true
+      "alert_emails": []
     }
   ]
 }

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import cv2
+from supabase import create_client
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,6 @@ if str(SRC_ROOT) not in sys.path:
 
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.face_recognition import FaceRecognitionService
-from helmet_monitoring.storage.repository import SupabaseAlertRepository
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -43,8 +43,8 @@ def main() -> None:
         )
 
     face_root = settings.resolve_path(settings.face_recognition.face_profile_dir)
-    repository = SupabaseAlertRepository(settings.supabase.url, settings.supabase.service_role_key)
-    people_response = repository.client.table("persons").select("person_id").eq("status", "active").execute()
+    client = create_client(settings.supabase.url, settings.supabase.service_role_key)
+    people_response = client.table("persons").select("person_id").eq("status", "active").execute()
     active_person_ids = {item["person_id"] for item in (people_response.data or []) if item.get("person_id")}
 
     rows: list[dict] = []
@@ -77,10 +77,10 @@ def main() -> None:
         encoded_files += 1
 
     for person_id in processed_person_ids:
-        repository.client.table("person_face_profiles").delete().eq("person_id", person_id).execute()
+        client.table("person_face_profiles").delete().eq("person_id", person_id).execute()
 
     if rows:
-        repository.client.table("person_face_profiles").insert(rows).execute()
+        client.table("person_face_profiles").insert(rows).execute()
 
     print(f"face_profile_dir={face_root}")
     print(f"encoded_files={encoded_files}")

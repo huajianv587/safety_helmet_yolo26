@@ -1,0 +1,9 @@
+{
+  email {$HELMET_TLS_EMAIL:ops@example.com}
+}
+
+{$HELMET_PUBLIC_HOST:localhost} {
+  encode gzip
+  reverse_proxy dashboard:8501
+  tls internal
+}

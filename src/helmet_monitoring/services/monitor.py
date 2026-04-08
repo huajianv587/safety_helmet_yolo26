@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from helmet_monitoring.core.config import AppSettings
 from helmet_monitoring.core.schemas import AlertRecord, CameraHeartbeat, utc_now
@@ -14,6 +15,7 @@ from helmet_monitoring.services.event_engine import ViolationEventEngine
 from helmet_monitoring.services.governance import FalsePositiveGovernance
 from helmet_monitoring.services.identity_resolver import build_identity_resolver
 from helmet_monitoring.services.notifier import NotificationService
+from helmet_monitoring.services.operations import operations_paths, write_monitor_heartbeat
 from helmet_monitoring.services.video_sources import CameraStream
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import AlertRepository, build_repository
@@ -23,6 +25,13 @@ class SafetyHelmetMonitor:
     def __init__(self, settings: AppSettings, repository: AlertRepository | None = None) -> None:
         if not settings.cameras:
             raise ValueError("At least one camera source is required in configs/runtime.json")
+        self.streams = [
+            CameraStream(camera, retry_seconds=settings.monitoring.camera_retry_seconds)
+            for camera in settings.cameras
+            if camera.enabled
+        ]
+        if not self.streams:
+            raise ValueError("At least one enabled camera source is required in configs/runtime.json")
         self.settings = settings
         self.repository = repository or build_repository(settings)
         self.evidence_store = EvidenceStore(settings)
@@ -32,13 +41,12 @@ class SafetyHelmetMonitor:
         self.governance = FalsePositiveGovernance(settings)
         self.clip_recorder = ClipRecorder(settings, self.evidence_store)
         self.notifier = NotificationService(settings, self.repository)
-        self.streams = [
-            CameraStream(camera, retry_seconds=settings.monitoring.camera_retry_seconds)
-            for camera in settings.cameras
-            if camera.enabled
-        ]
         self._last_heartbeat: dict[str, float] = {}
         self._last_status: dict[str, str] = {}
+        self._processed_frames = 0
+        self._last_alert_event_no: str | None = None
+        self._last_preview_ts: dict[str, float] = {}
+        self._preview_state: dict[str, dict[str, str]] = {}
 
     def _persist_crop(self, camera_id: str, crop, alert_id: str, observed_at, category: str, suffix: str) -> tuple[str | None, str | None]:
         if crop is None:
@@ -122,26 +130,120 @@ class SafetyHelmetMonitor:
                 },
             )
 
+    def _advance_frame_budget(self, processed_frames: int, hard_limit: int | None) -> tuple[int, bool]:
+        processed_frames += 1
+        self._processed_frames = processed_frames
+        if hard_limit and processed_frames >= hard_limit:
+            print(f"[monitor] Reached frame limit: {hard_limit}")
+            return processed_frames, True
+        return processed_frames, False
+
+    def _camera_statuses(self) -> list[dict[str, object]]:
+        statuses: list[dict[str, object]] = []
+        for stream in self.streams:
+            payload = {
+                "camera_id": stream.camera.camera_id,
+                "camera_name": stream.camera.camera_name,
+                "status": self._last_status.get(stream.camera.camera_id, "unknown"),
+                "retry_count": stream.retry_count,
+                "reconnect_count": stream.reconnect_count,
+                "last_error": stream.last_error,
+                "last_fps": stream.last_fps,
+            }
+            payload.update(self._preview_state.get(stream.camera.camera_id, {}))
+            statuses.append(payload)
+        return statuses
+
+    def _write_service_state(self, status: str, detail: str | None = None) -> None:
+        write_monitor_heartbeat(
+            self.settings,
+            status=status,
+            detail=detail,
+            processed_frames=self._processed_frames,
+            repository_backend=self.repository.backend_name,
+            config_path=str(self.settings.config_path),
+            model_path=self.settings.model.path,
+            camera_statuses=self._camera_statuses(),
+            last_alert_event_no=self._last_alert_event_no,
+        )
+
+    def _live_preview_path(self, camera_id: str) -> Path:
+        paths = operations_paths(self.settings)
+        target = paths["live_frames_dir"] / f"{camera_id}.jpg"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def _write_preview_frame(self, stream: CameraStream, frame, observed_at) -> None:
+        preview_frame = frame.copy()
+        height, width = preview_frame.shape[:2]
+        max_width = 960
+        if width > max_width:
+            scaled_height = max(1, int(height * (max_width / float(width))))
+            preview_frame = cv2.resize(preview_frame, (max_width, scaled_height))
+
+        success, encoded = cv2.imencode(".jpg", preview_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        if not success:
+            return
+
+        preview_path = self._live_preview_path(stream.camera.camera_id)
+        preview_path.write_bytes(encoded.tobytes())
+        self._preview_state[stream.camera.camera_id] = {
+            "preview_path": str(preview_path),
+            "preview_updated_at": observed_at.isoformat(),
+        }
+
+    def _update_live_preview(self, stream: CameraStream, frame, observed_at) -> None:
+        now_ts = observed_at.timestamp()
+        last_write = self._last_preview_ts.get(stream.camera.camera_id, 0.0)
+        if now_ts - last_write < 1.0:
+            return
+        self._write_preview_frame(stream, frame, observed_at)
+        self._last_preview_ts[stream.camera.camera_id] = now_ts
+
+    def _mark_preview_offline(self, stream: CameraStream, observed_at) -> None:
+        now_ts = observed_at.timestamp()
+        last_write = self._last_preview_ts.get(stream.camera.camera_id, 0.0)
+        if now_ts - last_write < 1.0:
+            return
+
+        canvas = np.zeros((540, 960, 3), dtype=np.uint8)
+        cv2.putText(canvas, "STREAM OFFLINE", (42, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.25, (0, 170, 255), 3)
+        cv2.putText(canvas, f"Camera: {stream.camera.camera_name}", (42, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (235, 235, 235), 2)
+        cv2.putText(canvas, f"Updated: {observed_at.isoformat()}", (42, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (200, 200, 200), 2)
+        detail = stream.last_error or "Waiting for the phone stream to reconnect."
+        cv2.putText(canvas, detail[:88], (42, 320), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 2)
+        self._write_preview_frame(stream, canvas, observed_at)
+        self._last_preview_ts[stream.camera.camera_id] = now_ts
+
     def run(self, max_frames: int | None = None) -> None:
         hard_limit = max_frames if max_frames is not None else self.settings.monitoring.max_frames
         processed_frames = 0
         print(f"[monitor] Starting with repository={self.repository.backend_name} cameras={len(self.streams)}")
+        self._write_service_state("starting", f"Initializing {len(self.streams)} camera streams.")
         try:
             while True:
                 for stream in self.streams:
                     success, frame = stream.read()
                     if not success:
+                        self._mark_preview_offline(stream, utc_now())
                         self._upsert_camera(stream, "offline")
+                        self._write_service_state("running", f"Camera {stream.camera.camera_name} is offline.")
+                        processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
+                        if should_stop:
+                            self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
+                            return
                         continue
 
                     observed_at = utc_now()
+                    self._update_live_preview(stream, frame, observed_at)
                     self._finalize_pending_clips(stream, frame, observed_at)
                     self._upsert_camera(stream, "online")
+                    self._write_service_state("running", f"Camera {stream.camera.camera_name} is online.")
 
                     if stream.frames_seen % self.settings.monitoring.frame_stride != 0:
-                        processed_frames += 1
-                        if hard_limit and processed_frames >= hard_limit:
-                            print(f"[monitor] Reached frame limit: {hard_limit}")
+                        processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
+                        if should_stop:
+                            self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
                             return
                         continue
 
@@ -237,6 +339,7 @@ class SafetyHelmetMonitor:
                                 created_at=observed_at,
                             )
                             self.repository.insert_alert(alert.to_record())
+                            self._last_alert_event_no = alert.event_no
                             self.repository.insert_audit_log(
                                 {
                                     "audit_id": uuid.uuid4().hex,
@@ -263,12 +366,14 @@ class SafetyHelmetMonitor:
                                 alert.snapshot_path,
                                 f"confidence={alert.confidence:.2f}",
                             )
+                            self._write_service_state("running", f"Latest alert: {alert.event_no}")
 
-                    processed_frames += 1
-                    if hard_limit and processed_frames >= hard_limit:
-                        print(f"[monitor] Reached frame limit: {hard_limit}")
+                    processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
+                    if should_stop:
+                        self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
                         return
                 time.sleep(0.01)
         finally:
+            self._write_service_state("stopped", "Monitor process stopped.")
             for stream in self.streams:
                 stream.release()

@@ -55,9 +55,18 @@ class LocalBadgeOcrService:
             return
         provider = self.ocr_settings.provider
         if provider in {"paddleocr", "auto"} and PaddleOCR is not None:
-            self.engine = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-            self.provider = "paddleocr"
-        elif provider in {"rapidocr", "auto"} and RapidOCR is not None:
+            try:
+                try:
+                    self.engine = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
+                except (TypeError, ValueError):
+                    # Newer PaddleOCR versions changed accepted constructor args.
+                    self.engine = PaddleOCR(use_angle_cls=False, lang="en")
+                self.provider = "paddleocr"
+                return
+            except Exception:
+                self.engine = None
+                self.provider = "none"
+        if provider in {"rapidocr", "auto"} and RapidOCR is not None:
             self.engine = RapidOCR()
             self.provider = "rapidocr"
 

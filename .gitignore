@@ -1,6 +1,8 @@
 .env
 .idea/
 .venv/
+.venv311/
+.venv-py313-backup/
 .ultralytics/
 __pycache__/
 artifacts/

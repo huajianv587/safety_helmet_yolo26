@@ -135,6 +135,16 @@ class AlertRepository(ABC):
     def insert_audit_log(self, audit_record: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_audit_logs(
+        self,
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
 
 class LocalAlertRepository(AlertRepository):
     backend_name = "local"
@@ -290,6 +300,21 @@ class LocalAlertRepository(AlertRepository):
     def insert_audit_log(self, audit_record: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             return self._append_jsonl(self.audit_logs_file, audit_record)
+
+    def list_audit_logs(
+        self,
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        rows = self._read_jsonl(self.audit_logs_file)
+        if entity_type:
+            rows = [row for row in rows if row.get("entity_type") == entity_type]
+        if entity_id:
+            rows = [row for row in rows if row.get("entity_id") == entity_id]
+        rows.sort(key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)
+        return rows[:limit]
 
 
 class SupabaseAlertRepository(AlertRepository):
@@ -457,6 +482,26 @@ class SupabaseAlertRepository(AlertRepository):
         except Exception as exc:
             if self._is_schema_error(exc):
                 return self.fallback_repo.insert_audit_log(audit_record)
+            raise
+
+    def list_audit_logs(
+        self,
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        try:
+            query = self.client.table("audit_logs").select("*").order("created_at", desc=True).limit(limit)
+            if entity_type:
+                query = query.eq("entity_type", entity_type)
+            if entity_id:
+                query = query.eq("entity_id", entity_id)
+            response = query.execute()
+            return response.data or []
+        except Exception as exc:
+            if self._is_schema_error(exc):
+                return self.fallback_repo.list_audit_logs(entity_type=entity_type, entity_id=entity_id, limit=limit)
             raise
 
 

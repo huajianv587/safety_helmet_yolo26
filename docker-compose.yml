@@ -1,26 +1,74 @@
-version: "3.9"
-
 services:
+  rtmp-gateway:
+    image: tiangolo/nginx-rtmp
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+
   dashboard:
     build: .
-    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    command: ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    restart: unless-stopped
     ports:
       - "8501:8501"
     env_file:
       - .env
     volumes:
-      - ./:/app
+      - ./configs:/app/configs
+      - ./artifacts:/app/artifacts
+      - ./data/hard_cases:/app/data/hard_cases
+      - ./.ultralytics:/app/.ultralytics
     environment:
+      HELMET_CONFIG_PATH: ${HELMET_CONFIG_PATH:-configs/runtime.json}
+      HELMET_STORAGE_BACKEND: ${HELMET_STORAGE_BACKEND:-supabase}
       PYTHONPATH: /app/src
       YOLO_CONFIG_DIR: /app/.ultralytics
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      STREAMLIT_SERVER_HEADLESS: "true"
+    healthcheck:
+      test: ["CMD", "python", "scripts/dashboard_healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   monitor:
     build: .
-    command: python scripts/run_monitor.py
+    command: ["python", "-u", "scripts/run_monitor.py"]
+    restart: unless-stopped
+    depends_on:
+      - rtmp-gateway
     env_file:
       - .env
     volumes:
-      - ./:/app
+      - ./configs:/app/configs
+      - ./artifacts:/app/artifacts
+      - ./data/hard_cases:/app/data/hard_cases
+      - ./.ultralytics:/app/.ultralytics
     environment:
+      HELMET_CONFIG_PATH: ${HELMET_CONFIG_PATH:-configs/runtime.json}
+      HELMET_STORAGE_BACKEND: ${HELMET_STORAGE_BACKEND:-supabase}
       PYTHONPATH: /app/src
       YOLO_CONFIG_DIR: /app/.ultralytics
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+    healthcheck:
+      test: ["CMD", "python", "scripts/monitor_healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  gateway:
+    image: caddy:2-alpine
+    profiles: ["edge"]
+    restart: unless-stopped
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./artifacts/runtime/caddy:/data
+      - ./artifacts/logs/caddy:/config

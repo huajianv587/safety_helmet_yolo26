@@ -5,14 +5,8 @@
     "confidence": 0.45,
     "imgsz": 640,
     "device": "cpu",
-    "violation_labels": [
-      "no_helmet",
-      "person"
-    ],
-    "safe_labels": [
-      "helmet",
-      "hat"
-    ]
+    "violation_labels": ["no_helmet", "person"],
+    "safe_labels": ["helmet", "hat"]
   },
   "event_rules": {
     "alert_frames": 6,
@@ -31,7 +25,7 @@
   },
   "monitoring": {
     "frame_stride": 3,
-    "camera_retry_seconds": 1.5,
+    "camera_retry_seconds": 5.0,
     "heartbeat_interval_seconds": 10.0,
     "max_frames": 0
   },
@@ -114,13 +108,12 @@
       "workshop_name": "Safety Lab",
       "zone_name": "Desktop",
       "responsible_department": "Safety",
-      "alert_emails": [],
-      "enabled": false
+      "alert_emails": []
     },
     {
       "camera_id": "cam-rtsp-001",
-      "camera_name": "Phone Stream Camera",
-      "source": "${HELMET_MONITOR_STREAM_URL:rtmp://rtmp-gateway:1935/live/stream}",
+      "camera_name": "RTSP Camera",
+      "source": "${HELMET_PUBLISH_URL:rtmp://192.168.0.15:1935/live/stream}",
       "location": "Factory RTSP Zone",
       "department": "Safety",
       "site_name": "Demo Site",
@@ -130,7 +123,7 @@
       "zone_name": "Gate 1",
       "responsible_department": "Safety",
       "alert_emails": [],
-      "enabled": true
+      "enabled": false
     }
   ]
 }

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 
 @dataclass(slots=True, frozen=True)
@@ -137,7 +138,7 @@ class NotificationSettings:
 
 @dataclass(slots=True, frozen=True)
 class SecuritySettings:
-    use_private_bucket: bool = False
+    use_private_bucket: bool = True
     signed_url_seconds: int = 86400
     evidence_retention_days: int = 90
     audit_enabled: bool = True
@@ -223,6 +224,45 @@ def _tuple_from_strings(values: list[str] | tuple[str, ...] | str | None) -> tup
     else:
         items = [str(item).strip() for item in values]
     return tuple(item for item in items if item)
+
+
+def _normalize_env_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    cleaned = str(value).strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
+def _resolve_env_placeholder(value: str | None) -> str:
+    cleaned = _normalize_env_text(value)
+    if not cleaned.startswith("${") or not cleaned.endswith("}"):
+        return cleaned
+    inner = cleaned[2:-1].strip()
+    if not inner:
+        return ""
+    env_name, separator, fallback = inner.partition(":")
+    resolved = _normalize_env_text(os.getenv(env_name.strip(), ""))
+    if resolved:
+        return resolved
+    if separator:
+        return fallback.strip()
+    return ""
+
+
+def _normalize_supabase_url(value: str | None) -> str:
+    cleaned = _normalize_env_text(value)
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return cleaned
+    if "supabase.co" in lowered:
+        return f"https://{cleaned}"
+    if lowered.startswith(("localhost", "127.0.0.1")):
+        return f"http://{cleaned}"
+    return cleaned
 
 
 def _parse_ignore_zones(raw_value: dict[str, Any] | None) -> dict[str, tuple[dict[str, int], ...]]:
@@ -361,11 +401,11 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         notifications=NotificationSettings(
             enabled=bool(notification_raw.get("enabled", True)),
             email_enabled=bool(notification_raw.get("email_enabled", True)),
-            smtp_host=os.getenv("SMTP_HOST", str(notification_raw.get("smtp_host", ""))).strip(),
+            smtp_host=_normalize_env_text(os.getenv("SMTP_HOST", str(notification_raw.get("smtp_host", "")))),
             smtp_port=int(os.getenv("SMTP_PORT", notification_raw.get("smtp_port", 587))),
-            smtp_username=os.getenv("SMTP_USERNAME", str(notification_raw.get("smtp_username", ""))).strip(),
-            smtp_password=os.getenv("SMTP_PASSWORD", str(notification_raw.get("smtp_password", ""))).strip(),
-            smtp_from_email=os.getenv("SMTP_FROM_EMAIL", str(notification_raw.get("smtp_from_email", ""))).strip(),
+            smtp_username=_normalize_env_text(os.getenv("SMTP_USERNAME", str(notification_raw.get("smtp_username", "")))),
+            smtp_password=_normalize_env_text(os.getenv("SMTP_PASSWORD", str(notification_raw.get("smtp_password", "")))),
+            smtp_from_email=_normalize_env_text(os.getenv("SMTP_FROM_EMAIL", str(notification_raw.get("smtp_from_email", "")))),
             use_tls=str(os.getenv("SMTP_USE_TLS", notification_raw.get("use_tls", True))).strip().lower()
             not in {"false", "0", "no"},
             default_recipients=_tuple_from_strings(
@@ -379,15 +419,15 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             audit_enabled=bool(security_raw.get("audit_enabled", True)),
         ),
         supabase=SupabaseSettings(
-            url=os.getenv("SUPABASE_URL", "").strip(),
-            service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip(),
-            storage_bucket=os.getenv("SUPABASE_STORAGE_BUCKET", "helmet-alerts").strip() or "helmet-alerts",
+            url=_normalize_supabase_url(os.getenv("SUPABASE_URL", "")),
+            service_role_key=_normalize_env_text(os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")),
+            storage_bucket=_normalize_env_text(os.getenv("SUPABASE_STORAGE_BUCKET", "helmet-alerts")) or "helmet-alerts",
         ),
         cameras=tuple(
             CameraSettings(
                 camera_id=str(camera["camera_id"]),
                 camera_name=str(camera.get("camera_name", camera["camera_id"])),
-                source=str(camera.get("source", "0")),
+                source=_resolve_env_placeholder(str(camera.get("source", "0"))),
                 location=str(camera.get("location", "Unknown")),
                 department=str(camera.get("department", "Unknown")),
                 enabled=bool(camera.get("enabled", True)),

@@ -23,6 +23,12 @@ def main() -> None:
     cameras = repository.list_cameras()
     print(f"backend={repository.backend_name}")
     print(f"camera_count={len(cameras)}")
+    print(f"configured_camera_count={len(settings.cameras)}")
+    print(f"enabled_camera_count={sum(1 for camera in settings.cameras if camera.enabled)}")
+    print(f"supabase_configured={str(settings.supabase.is_configured).lower()}")
+    print(f"use_private_bucket={str(settings.security.use_private_bucket).lower()}")
+    if settings.repository_backend == "supabase" and not settings.supabase.is_configured:
+        print("supabase_credentials=missing")
     if repository.backend_name == "supabase":
         people_count = 0
         profile_count = 0
@@ -35,9 +41,9 @@ def main() -> None:
             print("identity_extension=missing")
         try:
             profile_response = (
-                repository.client.table("person_face_profiles").select("profile_id", count="exact").limit(1).execute()
+                repository.client.table("person_face_profiles").select("profile_id", count="exact").execute()
             )
-            profile_count = profile_response.count or 0
+            profile_count = profile_response.count or len(profile_response.data or [])
             repository.client.table("alerts").select("identity_confidence").limit(1).execute()
             print("identity_ai_extension=ready")
         except Exception:
@@ -58,6 +64,12 @@ def main() -> None:
             print(f"storage_bucket_ready={str(store._ensure_bucket()).lower()}")
         except Exception:
             print("storage_bucket_ready=false")
+        print(f"storage_access={'signed_urls' if settings.security.use_private_bucket else 'public_urls'}")
+    elif settings.repository_backend == "supabase":
+        print("identity_extension=unknown")
+        print("identity_ai_extension=unknown")
+        print("product_extension=unknown")
+        print("storage_bucket_ready=false")
 
 
 if __name__ == "__main__":

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from helmet_monitoring.core.schemas import AlertActionRecord, HardCaseRecord, utc_now
+from helmet_monitoring.services.model_governance import sink_feedback_case
 from helmet_monitoring.storage.repository import AlertRepository
 
 
 class AlertWorkflowService:
-    def __init__(self, repository: AlertRepository) -> None:
+    def __init__(self, repository: AlertRepository, repo_root: Path | None = None) -> None:
         self.repository = repository
+        self.repo_root = repo_root
 
     def _append_action(
         self,
@@ -117,4 +120,17 @@ class AlertWorkflowService:
                     note=note,
                     created_at=now,
                 ).to_record()
+            )
+            feedback_case = sink_feedback_case(alert, case_type="false_positive", note=note, repo_root=self.repo_root)
+            self.repository.insert_audit_log(
+                {
+                    "audit_id": uuid.uuid4().hex,
+                    "entity_type": "hard_case",
+                    "entity_id": alert["alert_id"],
+                    "action_type": "queued_for_retraining",
+                    "actor": actor,
+                    "actor_role": actor_role,
+                    "payload": feedback_case,
+                    "created_at": utc_now().isoformat(),
+                }
             )
