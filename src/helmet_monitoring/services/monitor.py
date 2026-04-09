@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -47,6 +48,7 @@ class SafetyHelmetMonitor:
         self._last_alert_event_no: str | None = None
         self._last_preview_ts: dict[str, float] = {}
         self._preview_state: dict[str, dict[str, str]] = {}
+        self._preview_interval_seconds = 1.0 / max(1.0, float(self.settings.monitoring.preview_fps))
 
     def _persist_crop(self, camera_id: str, crop, alert_id: str, observed_at, category: str, suffix: str) -> tuple[str | None, str | None]:
         if crop is None:
@@ -186,7 +188,9 @@ class SafetyHelmetMonitor:
             return
 
         preview_path = self._live_preview_path(stream.camera.camera_id)
-        preview_path.write_bytes(encoded.tobytes())
+        temp_path = preview_path.with_suffix(preview_path.suffix + ".tmp")
+        temp_path.write_bytes(encoded.tobytes())
+        os.replace(temp_path, preview_path)
         self._preview_state[stream.camera.camera_id] = {
             "preview_path": str(preview_path),
             "preview_updated_at": observed_at.isoformat(),
@@ -195,7 +199,7 @@ class SafetyHelmetMonitor:
     def _update_live_preview(self, stream: CameraStream, frame, observed_at) -> None:
         now_ts = observed_at.timestamp()
         last_write = self._last_preview_ts.get(stream.camera.camera_id, 0.0)
-        if now_ts - last_write < 1.0:
+        if now_ts - last_write < self._preview_interval_seconds:
             return
         self._write_preview_frame(stream, frame, observed_at)
         self._last_preview_ts[stream.camera.camera_id] = now_ts
@@ -203,7 +207,7 @@ class SafetyHelmetMonitor:
     def _mark_preview_offline(self, stream: CameraStream, observed_at) -> None:
         now_ts = observed_at.timestamp()
         last_write = self._last_preview_ts.get(stream.camera.camera_id, 0.0)
-        if now_ts - last_write < 1.0:
+        if now_ts - last_write < self._preview_interval_seconds:
             return
 
         canvas = np.zeros((540, 960, 3), dtype=np.uint8)
@@ -235,12 +239,12 @@ class SafetyHelmetMonitor:
                         continue
 
                     observed_at = utc_now()
-                    self._update_live_preview(stream, frame, observed_at)
                     self._finalize_pending_clips(stream, frame, observed_at)
                     self._upsert_camera(stream, "online")
                     self._write_service_state("running", f"Camera {stream.camera.camera_name} is online.")
 
                     if stream.frames_seen % self.settings.monitoring.frame_stride != 0:
+                        self._update_live_preview(stream, frame, observed_at)
                         processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
                         if should_stop:
                             self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
@@ -248,13 +252,15 @@ class SafetyHelmetMonitor:
                         continue
 
                     detections = self.detector.detect(frame)
+                    preview_frame = self.detector.annotate(frame, detections) if detections else frame
+                    self._update_live_preview(stream, preview_frame, observed_at)
                     alert_candidates = self.event_engine.evaluate(
                         stream.camera.camera_id,
                         detections,
                         observed_at,
                     )
                     if alert_candidates:
-                        annotated = self.detector.annotate(frame, detections)
+                        annotated = preview_frame
                         for candidate in alert_candidates:
                             governance = self.governance.evaluate(stream.camera, candidate, observed_at)
                             if not governance.allow:

@@ -4,6 +4,9 @@
 
 {$HELMET_PUBLIC_HOST:localhost} {
   encode gzip
+  handle_path /live-preview/* {
+    reverse_proxy dashboard:8765
+  }
   reverse_proxy dashboard:8501
   tls internal
 }

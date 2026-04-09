@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
@@ -57,6 +59,7 @@ class VideoSourceTest(unittest.TestCase):
         class FakeCapture:
             def __init__(self) -> None:
                 self.set_calls: list[tuple[int, float]] = []
+                self.read_count = 0
 
             def isOpened(self) -> bool:
                 return True
@@ -64,6 +67,10 @@ class VideoSourceTest(unittest.TestCase):
             def set(self, prop_id: int, value: float) -> bool:
                 self.set_calls.append((prop_id, value))
                 return True
+
+            def read(self):
+                self.read_count += 1
+                return True, np.zeros((32, 32, 3), dtype=np.uint8)
 
             def release(self) -> None:
                 return None
@@ -88,6 +95,7 @@ class VideoSourceTest(unittest.TestCase):
             prop_id = getattr(video_sources.cv2, prop_name, None)
             if prop_id is not None:
                 self.assertIn(prop_id, set_props)
+        stream.release()
 
 
 if __name__ == "__main__":

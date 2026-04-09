@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -125,6 +126,52 @@ class CameraStream:
         self.last_error: str | None = None
         self.last_frame_ts = 0.0
         self.last_fps: float | None = None
+        self._reader_thread: threading.Thread | None = None
+        self._reader_stop = threading.Event()
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._latest_seq = 0
+        self._last_delivered_seq = 0
+        self._reader_failed = False
+
+    def _start_reader(self) -> None:
+        if self.capture is None:
+            return
+        if self._reader_thread and self._reader_thread.is_alive():
+            return
+        self._reader_stop = threading.Event()
+        self._reader_failed = False
+        self._latest_frame = None
+        self._latest_seq = 0
+        self._last_delivered_seq = 0
+        self._reader_thread = threading.Thread(
+            target=self._reader_loop,
+            name=f"camera-stream-{getattr(self.camera, 'camera_id', 'unknown')}",
+            daemon=True,
+        )
+        self._reader_thread.start()
+
+    def _reader_loop(self) -> None:
+        capture = self.capture
+        while capture is not None and not self._reader_stop.is_set():
+            try:
+                success, frame = capture.read()
+            except Exception:
+                success, frame = False, None
+            if not success:
+                self._reader_failed = True
+                break
+
+            now = time.time()
+            if self.last_frame_ts:
+                delta = now - self.last_frame_ts
+                if delta > 0:
+                    self.last_fps = round(1.0 / delta, 2)
+            self.last_frame_ts = now
+            self.last_error = None
+            with self._frame_lock:
+                self._latest_frame = frame
+                self._latest_seq += 1
 
     def open(self) -> bool:
         now = time.time()
@@ -142,6 +189,7 @@ class CameraStream:
         if opened:
             self.reconnect_count += 1
             self.last_error = None
+            self._start_reader()
         else:
             self.retry_count += 1
             if Path("/.dockerenv").exists() and is_local_device_source(self.camera.source):
@@ -156,8 +204,31 @@ class CameraStream:
         if self.capture is None or not self.capture.isOpened():
             if not self.open():
                 return False, None
-        success, frame = self.capture.read()
-        if not success:
+
+        deadline = time.time() + 0.15
+        while time.time() < deadline:
+            if self._reader_failed:
+                break
+            with self._frame_lock:
+                latest_frame = self._latest_frame
+                latest_seq = self._latest_seq
+            if latest_frame is not None and latest_seq != self._last_delivered_seq:
+                self._last_delivered_seq = latest_seq
+                self.frames_seen += 1
+                self.last_error = None
+                return True, latest_frame
+            time.sleep(0.003)
+
+        with self._frame_lock:
+            latest_frame = self._latest_frame
+            latest_seq = self._latest_seq
+        if latest_frame is not None and latest_seq > 0:
+            self._last_delivered_seq = latest_seq
+            self.frames_seen += 1
+            self.last_error = None
+            return True, latest_frame
+
+        if self._reader_failed:
             self.retry_count += 1
             if is_remote_stream_source(self.camera.source):
                 self.last_error = remote_stream_read_failure(self.camera.source)
@@ -165,17 +236,21 @@ class CameraStream:
                 self.last_error = "Frame read failed."
             self.release()
             return False, None
-        self.frames_seen += 1
-        now = time.time()
-        if self.last_frame_ts:
-            delta = now - self.last_frame_ts
-            if delta > 0:
-                self.last_fps = round(1.0 / delta, 2)
-        self.last_frame_ts = now
-        self.last_error = None
-        return True, frame
+        self.last_error = "Waiting for the next camera frame."
+        return False, None
 
     def release(self) -> None:
-        if self.capture is not None:
-            self.capture.release()
-            self.capture = None
+        self._reader_stop.set()
+        capture = self.capture
+        self.capture = None
+        if capture is not None:
+            capture.release()
+        if self._reader_thread is not None and self._reader_thread.is_alive():
+            if self._reader_thread is not threading.current_thread():
+                self._reader_thread.join(timeout=0.2)
+        self._reader_thread = None
+        with self._frame_lock:
+            self._latest_frame = None
+            self._latest_seq = 0
+            self._last_delivered_seq = 0
+        self._reader_failed = False

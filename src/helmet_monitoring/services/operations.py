@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import smtplib
+import time
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -30,9 +32,35 @@ def _resolve_repo_path(path_value: str | Path, repo_root: Path | None = None) ->
 def _atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
+    rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     with temp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-    temp_path.replace(path)
+        handle.write(rendered)
+
+    last_error: OSError | None = None
+    for _ in range(8):
+        try:
+            os.replace(temp_path, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.05)
+
+    for _ in range(8):
+        try:
+            with path.open("w", encoding="utf-8") as handle:
+                handle.write(rendered)
+            temp_path.unlink(missing_ok=True)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.05)
+
+    try:
+        temp_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    if last_error is not None:
+        raise last_error
 
 
 def _read_json(path: Path, default: Any) -> Any:

@@ -45,6 +45,7 @@ class PersistenceSettings:
 @dataclass(slots=True, frozen=True)
 class MonitoringSettings:
     frame_stride: int = 3
+    preview_fps: float = 20.0
     camera_retry_seconds: float = 5.0
     heartbeat_interval_seconds: float = 10.0
     max_frames: int = 0
@@ -382,6 +383,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         ),
         monitoring=MonitoringSettings(
             frame_stride=max(1, int(monitoring_raw.get("frame_stride", 3))),
+            preview_fps=max(1.0, float(monitoring_raw.get("preview_fps", 20.0))),
             camera_retry_seconds=float(monitoring_raw.get("camera_retry_seconds", 5.0)),
             heartbeat_interval_seconds=float(monitoring_raw.get("heartbeat_interval_seconds", 10.0)),
             max_frames=int(monitoring_raw.get("max_frames", 0)),

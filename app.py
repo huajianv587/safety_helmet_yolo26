@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import html
+import importlib
+import inspect
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -39,12 +44,16 @@ from helmet_monitoring.services.auth import (
 from helmet_monitoring.services.notifier import NotificationService
 from helmet_monitoring.services.operations import operations_paths
 from helmet_monitoring.services.person_directory import PersonDirectory
+from helmet_monitoring.services.video_sources import is_local_device_source
 from helmet_monitoring.services.workflow import AlertWorkflowService
+from helmet_monitoring.ui import live_preview_stream as live_preview_stream_module
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import build_repository, parse_timestamp
 
 
 UTC = timezone.utc
+LIVE_PREVIEW_PORT_DEFAULT = 8765
+LIVE_PREVIEW_PROXY_PATH_DEFAULT = "/live-preview"
 LANGUAGE_OPTIONS = {"zh": "中文", "en": "English"}
 STATUS_LABELS = {
     "pending": {"zh": "待处理", "en": "Pending"},
@@ -710,6 +719,204 @@ def _merge_live_cameras(settings, cameras: list[dict]) -> tuple[dict, list[dict]
     return monitor_runtime, merged
 
 
+def _active_live_camera_ids(settings, monitor_runtime: dict) -> set[str]:
+    runtime_ids = {
+        str(item.get("camera_id") or "").strip()
+        for item in monitor_runtime.get("camera_statuses", [])
+        if str(item.get("camera_id") or "").strip()
+    }
+    if runtime_ids:
+        return runtime_ids
+    return {camera.camera_id for camera in settings.cameras if camera.enabled}
+
+
+def _live_preview_port() -> int:
+    raw = str(os.getenv("HELMET_LIVE_PREVIEW_PORT", LIVE_PREVIEW_PORT_DEFAULT)).strip()
+    try:
+        port = int(raw)
+    except ValueError:
+        return LIVE_PREVIEW_PORT_DEFAULT
+    if 1024 <= port <= 65535:
+        return port
+    return LIVE_PREVIEW_PORT_DEFAULT
+
+
+def _live_preview_base_url() -> str:
+    direct_base = str(os.getenv("HELMET_LIVE_PREVIEW_BASE_URL", "")).strip().rstrip("/")
+    if direct_base:
+        return direct_base
+
+    host = str(os.getenv("HELMET_LIVE_PREVIEW_HOST", "")).strip()
+    if host:
+        return f"http://{host}:{_live_preview_port()}"
+
+    return ""
+
+
+def _live_preview_embed_base_url() -> str:
+    return _live_preview_base_url() or f"http://localhost:{_live_preview_port()}"
+
+
+def _live_preview_proxy_path() -> str:
+    raw = str(os.getenv("HELMET_LIVE_PREVIEW_PROXY_PATH", LIVE_PREVIEW_PROXY_PATH_DEFAULT)).strip()
+    if not raw:
+        return LIVE_PREVIEW_PROXY_PATH_DEFAULT
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    return raw.rstrip("/") or LIVE_PREVIEW_PROXY_PATH_DEFAULT
+
+
+@st.cache_resource
+def _cached_live_preview_server(live_frames_dir: str, port: int, _settings):
+    try:
+        preview_module = importlib.reload(live_preview_stream_module)
+        start_server = preview_module.start_live_preview_server
+        kwargs = {
+            "live_frames_dir": live_frames_dir,
+            "port": port,
+        }
+        if "settings" in inspect.signature(start_server).parameters:
+            kwargs["settings"] = _settings
+        return start_server(**kwargs)
+    except OSError as exc:
+        return {"error": str(exc), "port": port}
+
+
+def _ensure_live_preview_server(settings) -> tuple[bool, str | None]:
+    live_frames_dir = str(operations_paths(settings)["live_frames_dir"])
+    handle = _cached_live_preview_server(live_frames_dir, _live_preview_port(), _settings=settings)
+    if isinstance(handle, dict):
+        return False, str(handle.get("error") or "live preview server unavailable")
+    return True, None
+
+
+def _camera_source_value(settings, camera: dict) -> str:
+    camera_id = str(camera.get("camera_id") or "").strip()
+    if camera_id:
+        for configured in settings.cameras:
+            if configured.camera_id == camera_id:
+                return str(configured.source).strip()
+    return str(camera.get("source") or "").strip()
+
+
+def _camera_uses_local_device_preview(settings, camera: dict) -> bool:
+    source_value = _camera_source_value(settings, camera)
+    return bool(source_value and is_local_device_source(source_value))
+
+
+def _has_live_preview_feed(settings, cameras: list[dict]) -> bool:
+    monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
+    active_camera_ids = _active_live_camera_ids(settings, monitor_runtime)
+    if active_camera_ids:
+        live_cameras = [
+            camera
+            for camera in live_cameras
+            if str(camera.get("camera_id") or "").strip() in active_camera_ids
+        ]
+    return bool(live_cameras)
+
+
+def _render_live_preview_media(settings, camera: dict, *, language: str = "zh", height: int = 360) -> None:
+    preview_path = camera.get("preview_path")
+    preview_file = Path(preview_path) if preview_path else None
+    camera_id = str(camera.get("camera_id") or "").strip()
+    server_ready, server_error = _ensure_live_preview_server(settings)
+    if server_ready and camera_id and _camera_uses_local_device_preview(settings, camera):
+        browser_url = f"{_live_preview_embed_base_url()}/browser/{quote(camera_id, safe='')}"
+        st.markdown(
+            (
+                "<div style='overflow:hidden;border-radius:20px;background:#091220;'>"
+                f"<iframe src='{html.escape(browser_url)}' "
+                "allow='camera *; microphone *; autoplay *; fullscreen *' "
+                "style='display:block;width:100%;border:0;background:#091220;"
+                f"height:{int(height)}px;' loading='lazy'></iframe>"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            _txt(
+                language,
+                "当前画面由浏览器直接读取本机摄像头，红框表示未戴安全帽，绿框表示已戴安全帽。",
+                "This preview reads the local browser camera directly. Red boxes mean no helmet, green boxes mean helmet detected.",
+            )
+        )
+        return
+
+    if server_ready and camera_id:
+        stream_path = f"/mjpeg/{quote(camera_id, safe='')}"
+        direct_base_url = _live_preview_base_url()
+        proxy_path = _live_preview_proxy_path()
+        unavailable_text = _txt(
+            language,
+            "实时视频流暂时不可用，正在等待浏览器连上预览服务。",
+            "Live preview is unavailable right now while the browser connects to the preview stream.",
+        )
+        components.html(
+            (
+                "<div style='position:relative;margin:0;padding:0;width:100%;height:100%;overflow:hidden;border-radius:20px;background:#091220;'>"
+                "<img id='helmet-live-preview' alt='live preview' "
+                "style='display:block;width:100%;height:100%;object-fit:cover;background:#091220;' />"
+                "<div id='helmet-live-preview-status' "
+                "style='position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:18px;"
+                "text-align:center;color:#d9e7ff;font:500 14px/1.5 sans-serif;background:rgba(9,18,32,0.72);'>"
+                f"{html.escape(unavailable_text)}"
+                "</div>"
+                "</div>"
+                "<script>"
+                "(() => {"
+                f"const directBaseUrl = {json.dumps(direct_base_url)};"
+                f"const proxyPath = {json.dumps(proxy_path)};"
+                f"const streamPath = {json.dumps(stream_path)};"
+                f"const previewPort = {_live_preview_port()};"
+                "const image = document.getElementById('helmet-live-preview');"
+                "const status = document.getElementById('helmet-live-preview-status');"
+                "const showStatus = () => { status.style.display = 'flex'; };"
+                "const normalizedProxyPath = () => {"
+                "  if (!proxyPath) { return ''; }"
+                "  return proxyPath.startsWith('/') ? proxyPath : `/${proxyPath}`;"
+                "};"
+                "const resolveBaseUrl = () => {"
+                "  if (directBaseUrl) { return directBaseUrl.replace(/\\/+$/, ''); }"
+                "  try {"
+                "    if (!document.referrer) { return ''; }"
+                "    const referrerUrl = new URL(document.referrer);"
+                "    if (referrerUrl.protocol === 'https:') {"
+                "      return `${referrerUrl.protocol}//${referrerUrl.host}${normalizedProxyPath()}`.replace(/\\/+$/, '');"
+                "    }"
+                "    return `${referrerUrl.protocol}//${referrerUrl.hostname}:${previewPort}`;"
+                "  } catch (error) {"
+                "    return '';"
+                "  }"
+                "};"
+                "const baseUrl = resolveBaseUrl();"
+                "if (!baseUrl) {"
+                "  showStatus();"
+                "  return;"
+                "}"
+                "image.addEventListener('error', showStatus, { once: true });"
+                "image.src = `${baseUrl}${streamPath}?t=${Date.now()}`;"
+                "})();"
+                "</script>"
+            ),
+            height=height,
+        )
+        return
+
+    if preview_file and preview_file.exists():
+        st.image(str(preview_file), use_container_width=True)
+        return
+
+    if server_error:
+        st.caption(
+            _txt(
+                language,
+                f"网页视频流服务未启动，原因：{server_error}",
+                f"Live preview stream server is not available: {server_error}",
+            )
+        )
+
+
 def _render_live_monitor(settings, cameras: list[dict]) -> None:
     monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
     _section_header("LIVE MONITOR", "实时监控", "直接查看最新检测画面、运行状态和最近一次告警，不再只看状态表。")
@@ -728,7 +935,7 @@ def _render_live_monitor(settings, cameras: list[dict]) -> None:
     )
 
     if monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
-        st.info("监控在线，正在持续读流；当前还没有触发未戴安全帽告警。开启总览页自动刷新后，最新画面会持续更新。")
+        st.info("监控在线，正在持续读流；当前还没有触发未戴安全帽告警。网页中的预览窗口会直接播放实时画面。")
     elif not monitor_runtime:
         st.warning("暂时还没有拿到监控进程心跳，通常是 monitor 尚未启动或刚启动。")
 
@@ -744,12 +951,7 @@ def _render_live_monitor(settings, cameras: list[dict]) -> None:
             camera_status = _camera_status_label(camera.get("status") or camera.get("last_status"))
             st.markdown(f"**{_safe_text(camera_name)}**")
 
-            preview_path = camera.get("preview_path")
-            preview_file = Path(preview_path) if preview_path else None
-            if preview_file and preview_file.exists():
-                st.image(str(preview_file), use_container_width=True)
-            else:
-                _render_empty_panel("最新预览帧还没有落盘，稍等几秒后会自动出现。")
+            _render_live_preview_media(settings, camera, language="zh", height=360)
 
             st.caption(
                 " | ".join(
@@ -857,12 +1059,14 @@ def _render_command_strip_panel(settings, alerts: list[dict], cameras: list[dict
 
 def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
     monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
-    enabled_map = {camera.camera_id: camera.enabled for camera in settings.cameras}
-    filtered_cameras = [
-        camera
-        for camera in live_cameras
-        if enabled_map.get(str(camera.get("camera_id") or ""), True)
-    ]
+    active_camera_ids = _active_live_camera_ids(settings, monitor_runtime)
+    filtered_cameras = live_cameras
+    if active_camera_ids:
+        filtered_cameras = [
+            camera
+            for camera in live_cameras
+            if str(camera.get("camera_id") or "").strip() in active_camera_ids
+        ]
 
     def _preview_exists(camera: dict) -> bool:
         preview_path = camera.get("preview_path")
@@ -871,7 +1075,7 @@ def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
     filtered_cameras.sort(
         key=lambda camera: (
             0 if _preview_exists(camera) else 1,
-            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy"} else 1,
+            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy", "online"} else 1,
             str(camera.get("camera_name") or camera.get("camera_id") or ""),
         )
     )
@@ -930,20 +1134,7 @@ def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
                 unsafe_allow_html=True,
             )
 
-            preview_path = camera.get("preview_path")
-            preview_file = Path(preview_path) if preview_path else None
-            if preview_file and preview_file.exists():
-                st.image(str(preview_file), use_container_width=True)
-            else:
-                st.markdown(
-                    (
-                        "<div class='camera-placeholder'>"
-                        "<div class='camera-placeholder__title'>Awaiting Live Preview</div>"
-                        "<div class='camera-placeholder__meta'>监控已经接管该路设备，等下一帧预览落盘后会自动显示。</div>"
-                        "</div>"
-                    ),
-                    unsafe_allow_html=True,
-                )
+            _render_live_preview_media(settings, camera, language="zh", height=360)
 
             st.markdown(
                 (
@@ -3295,10 +3486,20 @@ def main() -> None:
     since_days = st.sidebar.slider(_txt(language, "筛选最近天数", "Recent Days"), min_value=1, max_value=30, value=7)
     all_cameras = repository.list_cameras()
     all_alerts = sorted(repository.list_alerts(limit=1000), key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)
+    live_preview_active = page == "总览" and _has_live_preview_feed(settings, all_cameras)
+    effective_auto_refresh = auto_refresh and not live_preview_active
     filtered_alerts = _filter_alerts(
         all_alerts,
         date_from=datetime.now(tz=UTC) - timedelta(days=since_days),
     )
+    if live_preview_active and auto_refresh:
+        st.sidebar.caption(
+            _txt(
+                language,
+                "检测到实时视频流正在播放，已暂停整页自动刷新，避免打断画面。",
+                "A live preview stream is active, so full-page auto refresh is paused to avoid interrupting the video.",
+            )
+        )
 
     st.sidebar.markdown(
         f"""
@@ -3323,7 +3524,7 @@ def main() -> None:
         cameras=all_cameras,
         role=role,
         operator=operator,
-        auto_refresh=auto_refresh,
+        auto_refresh=effective_auto_refresh,
         refresh_seconds=refresh_seconds,
         language=language,
     )
@@ -3363,7 +3564,7 @@ def main() -> None:
 
     _render_platform_configuration(settings)
 
-    if auto_refresh and page == "总览":
+    if effective_auto_refresh and page == "总览":
         time.sleep(refresh_seconds)
         st.rerun()
 
@@ -4030,7 +4231,7 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
     )
 
     if monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
-        st.info("The monitor is online and still reading frames. No no-helmet alert has been triggered yet, and the preview will keep updating while auto refresh is enabled.")
+        st.info("The monitor is online and still reading frames. No no-helmet alert has been triggered yet, and the preview tile should now play as a live stream in the browser.")
     elif not monitor_runtime:
         st.warning("The monitor heartbeat is not available yet. The monitor service may still be starting.")
 
@@ -4069,22 +4270,7 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
                 unsafe_allow_html=True,
             )
 
-            preview_path = camera.get("preview_path")
-            preview_file = Path(preview_path) if preview_path else None
-            if preview_file and preview_file.exists():
-                st.image(str(preview_file), use_container_width=True)
-            else:
-                st.markdown(
-                    (
-                        "<div class='camera-placeholder'>"
-                        "<div>"
-                        "<div class='camera-placeholder__title'>Awaiting Live Preview</div>"
-                        "<div class='camera-placeholder__meta'>The monitor already owns this device. The preview tile will appear automatically after the next frame is written.</div>"
-                        "</div>"
-                        "</div>"
-                    ),
-                    unsafe_allow_html=True,
-                )
+            _render_live_preview_media(settings, camera, language=language, height=360)
 
             st.markdown(
                 (

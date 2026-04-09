@@ -31,6 +31,7 @@
   },
   "monitoring": {
     "frame_stride": 3,
+    "preview_fps": 20.0,
     "camera_retry_seconds": 1.5,
     "heartbeat_interval_seconds": 10.0,
     "max_frames": 0

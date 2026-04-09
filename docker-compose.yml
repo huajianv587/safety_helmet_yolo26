@@ -11,6 +11,7 @@ services:
     restart: unless-stopped
     ports:
       - "8501:8501"
+      - "${HELMET_LIVE_PREVIEW_PORT:-8765}:${HELMET_LIVE_PREVIEW_PORT:-8765}"
     env_file:
       - .env
     volumes:
@@ -21,6 +22,8 @@ services:
     environment:
       HELMET_CONFIG_PATH: ${HELMET_CONFIG_PATH:-configs/runtime.json}
       HELMET_STORAGE_BACKEND: ${HELMET_STORAGE_BACKEND:-supabase}
+      HELMET_LIVE_PREVIEW_PORT: ${HELMET_LIVE_PREVIEW_PORT:-8765}
+      HELMET_LIVE_PREVIEW_PROXY_PATH: ${HELMET_LIVE_PREVIEW_PROXY_PATH:-/live-preview}
       PYTHONPATH: /app/src
       YOLO_CONFIG_DIR: /app/.ultralytics
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
