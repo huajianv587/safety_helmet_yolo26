@@ -154,7 +154,7 @@ Important variables:
 Notes:
 
 - `camera_use_laptop_camera=true` forces local-webcam demo behavior during settings loading.
-- `HELMET_LIVE_PREVIEW_PORT` defaults to `8765`.
+- `HELMET_LIVE_PREVIEW_PORT` defaults to `8876`.
 - Do not commit real secrets to version control.
 - If any keys were exposed during development, rotate them before production use.
 
@@ -224,13 +224,13 @@ Manual launch:
 Default preview URL pattern:
 
 ```text
-http://127.0.0.1:8765/browser/<camera_id>
+http://127.0.0.1:8876/browser/<camera_id>
 ```
 
 Example:
 
 ```text
-http://127.0.0.1:8765/browser/cam-local-001
+http://127.0.0.1:8876/browser/cam-local-001
 ```
 
 Important requirements:
@@ -698,7 +698,7 @@ python -m venv .venv
 说明：
 
 - `camera_use_laptop_camera=true` 会在加载配置时强制走本地摄像头演示模式。
-- `HELMET_LIVE_PREVIEW_PORT` 默认是 `8765`。
+- `HELMET_LIVE_PREVIEW_PORT` 默认是 `8876`。
 - 不要把真实密钥提交到版本控制。
 - 如果开发时有密钥泄露，正式部署前请先轮换。
 
@@ -768,13 +768,13 @@ start_desktop_webcam.cmd
 默认 URL 形式：
 
 ```text
-http://127.0.0.1:8765/browser/<camera_id>
+http://127.0.0.1:8876/browser/<camera_id>
 ```
 
 例如：
 
 ```text
-http://127.0.0.1:8765/browser/cam-local-001
+http://127.0.0.1:8876/browser/cam-local-001
 ```
 
 注意事项：

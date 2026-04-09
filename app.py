@@ -517,6 +517,7 @@ def _camera_status_label(value: str | None, language: str = "zh") -> str:
         "running": {"zh": "运行中", "en": "Running"},
         "healthy": {"zh": "健康", "en": "Healthy"},
         "configured": {"zh": "已配置", "en": "Configured"},
+        "browser_preview": {"zh": "浏览器直连", "en": "Browser Direct"},
         "offline": {"zh": "离线", "en": "Offline"},
         "error": {"zh": "异常", "en": "Error"},
     }
@@ -569,7 +570,7 @@ def _identity_tone(value: str | None) -> str:
 
 def _camera_tone(camera: dict) -> str:
     status = str(camera.get("last_status") or "").lower()
-    if status in {"running", "healthy"}:
+    if status in {"running", "healthy", "browser_preview"}:
         return "positive"
     if status in {"offline", "error"}:
         return "danger"
@@ -657,7 +658,9 @@ def _notification_frame(logs: list[dict], language: str) -> pd.DataFrame:
                 _txt(language, "发送时间", "Sent At"): _format_timestamp(
                     item.get("created_at") or item.get("sent_at") or item.get("updated_at")
                 ),
-                _txt(language, "事件编号", "Event No"): item.get("event_no") or item.get("alert_event_no") or "--",
+                _txt(language, "事件编号", "Event No"): _compact_identifier(
+                    item.get("event_no") or item.get("alert_event_no") or "--"
+                ),
                 _txt(language, "接收对象", "Recipient"): item.get("recipient") or item.get("recipient_email") or item.get("to") or "--",
                 _txt(language, "通道", "Channel"): item.get("channel") or item.get("type") or "email",
                 _txt(language, "状态", "Status"): _notification_status_label(item.get("status") or item.get("result"), language),
@@ -696,6 +699,43 @@ def _load_monitor_runtime(settings) -> dict:
         return {}
 
 
+def _configured_camera_payload(camera) -> dict:
+    payload = {
+        "camera_id": camera.camera_id,
+        "camera_name": camera.camera_name,
+        "source": str(camera.source),
+        "location": camera.location,
+        "department": camera.department,
+        "enabled": camera.enabled,
+        "default_person_id": camera.default_person_id,
+        "site_name": camera.site_name,
+        "building_name": camera.building_name,
+        "floor_name": camera.floor_name,
+        "workshop_name": camera.workshop_name,
+        "zone_name": camera.zone_name,
+        "responsible_department": camera.responsible_department,
+        "alert_emails": list(camera.alert_emails),
+    }
+    if is_local_device_source(str(camera.source).strip()):
+        payload.update(
+            {
+                "status": "browser_preview",
+                "last_status": "browser_preview",
+                "last_error": None,
+                "last_fps": "browser",
+            }
+        )
+    return payload
+
+
+def _enabled_local_preview_camera_ids(settings) -> set[str]:
+    return {
+        camera.camera_id
+        for camera in settings.cameras
+        if camera.enabled and is_local_device_source(str(camera.source).strip())
+    }
+
+
 def _merge_live_cameras(settings, cameras: list[dict]) -> tuple[dict, list[dict]]:
     monitor_runtime = _load_monitor_runtime(settings)
     status_by_camera = {
@@ -703,23 +743,33 @@ def _merge_live_cameras(settings, cameras: list[dict]) -> tuple[dict, list[dict]
         for item in monitor_runtime.get("camera_statuses", [])
         if item.get("camera_id")
     }
-    merged: list[dict] = []
-    seen: set[str] = set()
+    merged_by_camera: dict[str, dict] = {}
+    order: list[str] = []
+
+    def merge_item(item: dict) -> None:
+        camera_id = str(item.get("camera_id") or "").strip()
+        if not camera_id:
+            return
+        if camera_id not in merged_by_camera:
+            merged_by_camera[camera_id] = {}
+            order.append(camera_id)
+        merged_by_camera[camera_id].update(dict(item))
+
     for item in cameras:
-        camera_id = str(item.get("camera_id") or "")
-        payload = dict(item)
-        payload.update(status_by_camera.get(camera_id, {}))
-        merged.append(payload)
-        if camera_id:
-            seen.add(camera_id)
-    for camera_id, payload in status_by_camera.items():
-        if camera_id in seen:
-            continue
-        merged.append(dict(payload))
-    return monitor_runtime, merged
+        merge_item(item)
+    for payload in status_by_camera.values():
+        merge_item(payload)
+    for configured in settings.cameras:
+        if configured.enabled:
+            merge_item(_configured_camera_payload(configured))
+
+    return monitor_runtime, [merged_by_camera[camera_id] for camera_id in order]
 
 
 def _active_live_camera_ids(settings, monitor_runtime: dict) -> set[str]:
+    local_preview_ids = _enabled_local_preview_camera_ids(settings)
+    if local_preview_ids:
+        return local_preview_ids
     runtime_ids = {
         str(item.get("camera_id") or "").strip()
         for item in monitor_runtime.get("camera_statuses", [])
@@ -757,6 +807,10 @@ def _live_preview_embed_base_url() -> str:
     return _live_preview_base_url() or f"http://localhost:{_live_preview_port()}"
 
 
+def _live_preview_bind_host() -> str:
+    return str(os.getenv("HELMET_LIVE_PREVIEW_BIND_HOST", "127.0.0.1")).strip() or "127.0.0.1"
+
+
 def _live_preview_proxy_path() -> str:
     raw = str(os.getenv("HELMET_LIVE_PREVIEW_PROXY_PATH", LIVE_PREVIEW_PROXY_PATH_DEFAULT)).strip()
     if not raw:
@@ -767,24 +821,30 @@ def _live_preview_proxy_path() -> str:
 
 
 @st.cache_resource
-def _cached_live_preview_server(live_frames_dir: str, port: int, _settings):
+def _cached_live_preview_server(live_frames_dir: str, bind_host: str, port: int, _settings):
     try:
         preview_module = importlib.reload(live_preview_stream_module)
         start_server = preview_module.start_live_preview_server
         kwargs = {
             "live_frames_dir": live_frames_dir,
+            "host": bind_host,
             "port": port,
         }
         if "settings" in inspect.signature(start_server).parameters:
             kwargs["settings"] = _settings
         return start_server(**kwargs)
     except OSError as exc:
-        return {"error": str(exc), "port": port}
+        return {"error": str(exc), "host": bind_host, "port": port}
 
 
 def _ensure_live_preview_server(settings) -> tuple[bool, str | None]:
     live_frames_dir = str(operations_paths(settings)["live_frames_dir"])
-    handle = _cached_live_preview_server(live_frames_dir, _live_preview_port(), _settings=settings)
+    handle = _cached_live_preview_server(
+        live_frames_dir,
+        _live_preview_bind_host(),
+        _live_preview_port(),
+        _settings=settings,
+    )
     if isinstance(handle, dict):
         return False, str(handle.get("error") or "live preview server unavailable")
     return True, None
@@ -919,12 +979,20 @@ def _render_live_preview_media(settings, camera: dict, *, language: str = "zh", 
 
 def _render_live_monitor(settings, cameras: list[dict]) -> None:
     monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
+    active_camera_ids = _active_live_camera_ids(settings, monitor_runtime)
+    local_preview_mode = bool(_enabled_local_preview_camera_ids(settings))
+    if active_camera_ids:
+        live_cameras = [
+            camera
+            for camera in live_cameras
+            if str(camera.get("camera_id") or "").strip() in active_camera_ids
+        ]
     _section_header("LIVE MONITOR", "实时监控", "直接查看最新检测画面、运行状态和最近一次告警，不再只看状态表。")
 
-    status_label = _camera_status_label(monitor_runtime.get("status"))
-    processed_frames = str(monitor_runtime.get("processed_frames") or 0)
+    status_label = _camera_status_label("browser_preview" if local_preview_mode else monitor_runtime.get("status"))
+    processed_frames = "--" if local_preview_mode else str(monitor_runtime.get("processed_frames") or 0)
     latest_alert = str(monitor_runtime.get("last_alert_event_no") or "--")
-    updated_at = _format_timestamp(monitor_runtime.get("updated_at"))
+    updated_at = _format_timestamp(datetime.now(tz=UTC).isoformat()) if local_preview_mode else _format_timestamp(monitor_runtime.get("updated_at"))
     _render_detail_cards(
         [
             ("监控状态", status_label, "当前监控 worker 的最新心跳状态"),
@@ -934,7 +1002,9 @@ def _render_live_monitor(settings, cameras: list[dict]) -> None:
         ]
     )
 
-    if monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
+    if local_preview_mode:
+        st.info("当前启用了本机浏览器摄像头模式，下方画面直接来自网页摄像头，不依赖旧 monitor worker 的离线状态。")
+    elif monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
         st.info("监控在线，正在持续读流；当前还没有触发未戴安全帽告警。网页中的预览窗口会直接播放实时画面。")
     elif not monitor_runtime:
         st.warning("暂时还没有拿到监控进程心跳，通常是 monitor 尚未启动或刚启动。")
@@ -1010,6 +1080,13 @@ def _render_table_surface(
     )
 
 
+def _scrollable_container(*, height: int):
+    try:
+        return st.container(height=height)
+    except TypeError:
+        return st.container()
+
+
 def _feed_pill(label: str, value: object) -> str:
     return (
         "<span class='feed-pill'>"
@@ -1060,6 +1137,7 @@ def _render_command_strip_panel(settings, alerts: list[dict], cameras: list[dict
 def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
     monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
     active_camera_ids = _active_live_camera_ids(settings, monitor_runtime)
+    local_preview_mode = bool(_enabled_local_preview_camera_ids(settings))
     filtered_cameras = live_cameras
     if active_camera_ids:
         filtered_cameras = [
@@ -1075,16 +1153,16 @@ def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
     filtered_cameras.sort(
         key=lambda camera: (
             0 if _preview_exists(camera) else 1,
-            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy", "online"} else 1,
+            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy", "online", "browser_preview"} else 1,
             str(camera.get("camera_name") or camera.get("camera_id") or ""),
         )
     )
 
     _section_header("LIVE MONITOR", "实时监控", "把在线画面、状态和最新错误汇成统一监控面板，而不是只看状态表。")
-    status_label = _camera_status_label(monitor_runtime.get("status"))
-    processed_frames = str(monitor_runtime.get("processed_frames") or 0)
+    status_label = _camera_status_label("browser_preview" if local_preview_mode else monitor_runtime.get("status"))
+    processed_frames = "--" if local_preview_mode else str(monitor_runtime.get("processed_frames") or 0)
     latest_alert = str(monitor_runtime.get("last_alert_event_no") or "--")
-    updated_at = _format_timestamp(monitor_runtime.get("updated_at"))
+    updated_at = _format_timestamp(datetime.now(tz=UTC).isoformat()) if local_preview_mode else _format_timestamp(monitor_runtime.get("updated_at"))
     _render_detail_cards(
         [
             ("监控状态", status_label, "当前 monitor worker 的最新运行状态"),
@@ -1094,7 +1172,9 @@ def _render_live_monitor_panel(settings, cameras: list[dict]) -> None:
         ]
     )
 
-    if monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
+    if local_preview_mode:
+        st.info("当前启用了本机浏览器摄像头模式，下方画面直接来自网页摄像头，不依赖旧 monitor worker 的离线状态。")
+    elif monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
         st.info("监控在线，正在持续读流。当前还没有触发未戴安全帽告警，预览画面会随着自动刷新持续更新。")
     elif not monitor_runtime:
         st.warning("暂时还没有拿到监控进程心跳，通常是 monitor 尚未启动或刚启动。")
@@ -2611,10 +2691,20 @@ def render_review_desk(settings, repository, directory: PersonDirectory, evidenc
     history_col, notify_col = st.columns(2)
     with history_col:
         _section_header("WORKFLOW HISTORY", "处理记录", "查看每一步状态流转和人工处置动作。")
-        st.dataframe(pd.DataFrame(actions) if actions else pd.DataFrame(), hide_index=True, use_container_width=True)
+        _render_table_surface(
+            _action_frame(actions, "zh"),
+            empty_message="当前工单还没有处理记录。",
+            max_visible_rows=5,
+            scroll_label="默认展示 5 条记录，更多历史可在表格内上下滚动查看。",
+        )
     with notify_col:
         _section_header("DELIVERY LOG", "通知记录", "查看邮件或其他消息触达情况。")
-        st.dataframe(pd.DataFrame(notifications) if notifications else pd.DataFrame(), hide_index=True, use_container_width=True)
+        _render_table_surface(
+            _notification_frame(notifications, "zh"),
+            empty_message="当前工单还没有通知记录。",
+            max_visible_rows=5,
+            scroll_label="默认展示 5 条记录，更多通知可在表格内上下滚动查看。",
+        )
 
     people = directory.get_people()
     person_labels = {"不变更人员信息": None}
@@ -2748,38 +2838,39 @@ def render_camera_center(settings, repository, cameras: list[dict]) -> None:
             existing_options[f"{camera.camera_id} | {camera.camera_name}"] = camera
         selected = st.selectbox("配置对象", list(existing_options.keys()))
         current = existing_options[selected]
-
-        with st.form("camera_form"):
-            raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
-            source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
-            camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
-            camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
-            source_ref = st.text_input(
-                "source_ref",
-                value=source_default,
-                help="仅允许本地设备号/本地视频路径，或环境变量引用，如 ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}。",
-            )
-            if current and raw_source and not _is_safe_camera_source_reference(raw_source):
-                st.warning("当前远程源地址已隐藏。请改为环境变量占位符后再保存，避免把明文地址写回 runtime.json。")
-            enabled = st.checkbox("enabled", value=current.enabled if current else True)
-            location = st.text_input("location", value=current.location if current else "")
-            department = st.text_input("department", value=current.department if current else "")
-            site_name = st.text_input("site_name", value=current.site_name if current else "Default Site")
-            building_name = st.text_input("building_name", value=current.building_name if current else "Main Building")
-            floor_name = st.text_input("floor_name", value=current.floor_name if current else "Floor 1")
-            workshop_name = st.text_input("workshop_name", value=current.workshop_name if current else "Workshop A")
-            zone_name = st.text_input("zone_name", value=current.zone_name if current else "Zone A")
-            responsible_department = st.text_input(
-                "responsible_department",
-                value=current.responsible_department if current else department,
-            )
-            alert_emails = st.text_input(
-                "alert_emails",
-                value=",".join(current.alert_emails) if current else "",
-                help="多个邮箱用逗号分隔",
-            )
-            default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
-            save_submit = st.form_submit_button("保存到运行配置")
+        st.caption("默认展示约 6 项配置字段；更多字段请在右侧表单内部上下滚动。")
+        with _scrollable_container(height=560):
+            with st.form("camera_form"):
+                raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
+                source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
+                camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
+                camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
+                source_ref = st.text_input(
+                    "source_ref",
+                    value=source_default,
+                    help="仅允许本地设备号/本地视频路径，或环境变量引用，如 ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}。",
+                )
+                if current and raw_source and not _is_safe_camera_source_reference(raw_source):
+                    st.warning("当前远程源地址已隐藏。请改为环境变量占位符后再保存，避免把明文地址写回 runtime.json。")
+                enabled = st.checkbox("enabled", value=current.enabled if current else True)
+                location = st.text_input("location", value=current.location if current else "")
+                department = st.text_input("department", value=current.department if current else "")
+                site_name = st.text_input("site_name", value=current.site_name if current else "Default Site")
+                building_name = st.text_input("building_name", value=current.building_name if current else "Main Building")
+                floor_name = st.text_input("floor_name", value=current.floor_name if current else "Floor 1")
+                workshop_name = st.text_input("workshop_name", value=current.workshop_name if current else "Workshop A")
+                zone_name = st.text_input("zone_name", value=current.zone_name if current else "Zone A")
+                responsible_department = st.text_input(
+                    "responsible_department",
+                    value=current.responsible_department if current else department,
+                )
+                alert_emails = st.text_input(
+                    "alert_emails",
+                    value=",".join(current.alert_emails) if current else "",
+                    help="多个邮箱用逗号分隔",
+                )
+                default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
+                save_submit = st.form_submit_button("保存到运行配置")
     if save_submit and camera_id:
         source_value = source_ref.strip() or raw_source
         if not _is_safe_camera_source_reference(source_value):
@@ -3354,6 +3445,12 @@ def render_notification_center(settings, repository, notifier: NotificationServi
         _render_table_surface(
             _notification_frame(logs, language),
             empty_message=_txt(language, "当前还没有通知记录。", "No notification logs available yet."),
+            max_visible_rows=11,
+            scroll_label=_txt(
+                language,
+                "默认展示 11 条记录，更多通知可在表格内上下滚动。",
+                "Eleven rows stay visible by default. Scroll inside the panel for older deliveries.",
+            ),
         )
     with form_col:
         _section_header(
@@ -3375,7 +3472,7 @@ def render_notification_center(settings, repository, notifier: NotificationServi
                 ),
                 (
                     _txt(language, "最近事件", "Latest Event"),
-                    str(logs[0].get("event_no") or "--") if logs else "--",
+                    _compact_identifier(logs[0].get("event_no") or "--") if logs else "--",
                     _txt(language, "最近一条通知记录关联的事件编号", "Event number associated with the latest notification log"),
                 ),
             ]
@@ -4193,12 +4290,20 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
         return _render_live_monitor_panel_legacy(settings, cameras)
 
     monitor_runtime, live_cameras = _merge_live_cameras(settings, cameras)
+    active_camera_ids = _active_live_camera_ids(settings, monitor_runtime)
+    local_preview_mode = bool(_enabled_local_preview_camera_ids(settings))
     enabled_map = {camera.camera_id: camera.enabled for camera in settings.cameras}
     filtered_cameras = [
         camera
         for camera in live_cameras
         if enabled_map.get(str(camera.get("camera_id") or ""), True)
     ]
+    if active_camera_ids:
+        filtered_cameras = [
+            camera
+            for camera in filtered_cameras
+            if str(camera.get("camera_id") or "").strip() in active_camera_ids
+        ]
 
     def _preview_exists(camera: dict) -> bool:
         preview_path = camera.get("preview_path")
@@ -4207,7 +4312,7 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
     filtered_cameras.sort(
         key=lambda camera: (
             0 if _preview_exists(camera) else 1,
-            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy"} else 1,
+            0 if str(camera.get("status") or camera.get("last_status") or "").lower() in {"running", "healthy", "online", "browser_preview"} else 1,
             str(camera.get("camera_name") or camera.get("camera_id") or ""),
         )
     )
@@ -4217,10 +4322,10 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
         "Live Monitor",
         "Bring online frames, stream health, and the latest errors into one watch floor instead of checking raw status tables.",
     )
-    status_label = _camera_status_label(monitor_runtime.get("status"), language)
-    processed_frames = str(monitor_runtime.get("processed_frames") or 0)
+    status_label = _camera_status_label("browser_preview" if local_preview_mode else monitor_runtime.get("status"), language)
+    processed_frames = "--" if local_preview_mode else str(monitor_runtime.get("processed_frames") or 0)
     latest_alert = _compact_identifier(monitor_runtime.get("last_alert_event_no"))
-    updated_at = _format_timestamp_compact(monitor_runtime.get("updated_at"))
+    updated_at = _format_timestamp_compact(datetime.now(tz=UTC).isoformat()) if local_preview_mode else _format_timestamp_compact(monitor_runtime.get("updated_at"))
     _render_detail_cards(
         [
             ("Monitor Status", status_label, "Latest runtime state of the monitor worker"),
@@ -4230,7 +4335,9 @@ def _render_live_monitor_panel(settings, cameras: list[dict], language: str = "z
         ]
     )
 
-    if monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
+    if local_preview_mode:
+        st.info("Browser camera mode is active. The embedded tile below reads your laptop webcam directly instead of relying on the legacy monitor worker status.")
+    elif monitor_runtime.get("status") == "running" and not monitor_runtime.get("last_alert_event_no"):
         st.info("The monitor is online and still reading frames. No no-helmet alert has been triggered yet, and the preview tile should now play as a live stream in the browser.")
     elif not monitor_runtime:
         st.warning("The monitor heartbeat is not available yet. The monitor service may still be starting.")
@@ -4552,10 +4659,20 @@ def render_review_desk(
     history_col, notify_col = st.columns(2)
     with history_col:
         _section_header("WORKFLOW HISTORY", "Action History", "Track status transitions and the exact operator actions already taken on the case.")
-        _render_table_surface(_action_frame(actions, language), empty_message="No action history is available for this case yet.")
+        _render_table_surface(
+            _action_frame(actions, language),
+            empty_message="No action history is available for this case yet.",
+            max_visible_rows=5,
+            scroll_label="Five rows stay visible by default. Scroll inside the panel for older actions.",
+        )
     with notify_col:
         _section_header("DELIVERY LOG", "Notification Log", "Inspect outbound delivery attempts and the current notification status.")
-        _render_table_surface(_notification_frame(notifications, language), empty_message="No notification records are available for this case yet.")
+        _render_table_surface(
+            _notification_frame(notifications, language),
+            empty_message="No notification records are available for this case yet.",
+            max_visible_rows=5,
+            scroll_label="Five rows stay visible by default. Scroll inside the panel for older deliveries.",
+        )
 
     can_assign = role_has_permission(role, "review.assign")
     can_update = role_has_permission(role, "review.update")
@@ -4695,38 +4812,39 @@ def render_camera_center(settings, repository, cameras: list[dict], language: st
             existing_options[f"{camera.camera_id} | {camera.camera_name}"] = camera
         selected = st.selectbox("Target", list(existing_options.keys()))
         current = existing_options[selected]
-
-        with st.form("camera_form_en"):
-            raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
-            source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
-            camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
-            camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
-            source_ref = st.text_input(
-                "source_ref",
-                value=source_default,
-                help="Allow local device indexes / local video paths, or env placeholders such as ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}.",
-            )
-            if current and raw_source and not _is_safe_camera_source_reference(raw_source):
-                st.warning("The current remote source is hidden. Replace it with an env placeholder before saving so secrets are not written back to runtime.json.")
-            enabled = st.checkbox("enabled", value=current.enabled if current else True)
-            location = st.text_input("location", value=current.location if current else "")
-            department = st.text_input("department", value=current.department if current else "")
-            site_name = st.text_input("site_name", value=current.site_name if current else "Default Site")
-            building_name = st.text_input("building_name", value=current.building_name if current else "Main Building")
-            floor_name = st.text_input("floor_name", value=current.floor_name if current else "Floor 1")
-            workshop_name = st.text_input("workshop_name", value=current.workshop_name if current else "Workshop A")
-            zone_name = st.text_input("zone_name", value=current.zone_name if current else "Zone A")
-            responsible_department = st.text_input(
-                "responsible_department",
-                value=current.responsible_department if current else department,
-            )
-            alert_emails = st.text_input(
-                "alert_emails",
-                value=",".join(current.alert_emails) if current else "",
-                help="Separate multiple recipients with commas.",
-            )
-            default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
-            save_submit = st.form_submit_button("Save to Runtime Config")
+        st.caption("About six fields stay visible by default. Scroll inside the config editor to reach the rest of the camera settings.")
+        with _scrollable_container(height=560):
+            with st.form("camera_form_en"):
+                raw_source = _runtime_camera_source(settings.config_path, current.camera_id if current else None)
+                source_default = raw_source if _is_safe_camera_source_reference(raw_source) else ("0" if current is None else "")
+                camera_id = st.text_input("camera_id", value=current.camera_id if current else "")
+                camera_name = st.text_input("camera_name", value=current.camera_name if current else "")
+                source_ref = st.text_input(
+                    "source_ref",
+                    value=source_default,
+                    help="Allow local device indexes / local video paths, or env placeholders such as ${HELMET_MONITOR_STREAM_URL:rtsp://example/live}.",
+                )
+                if current and raw_source and not _is_safe_camera_source_reference(raw_source):
+                    st.warning("The current remote source is hidden. Replace it with an env placeholder before saving so secrets are not written back to runtime.json.")
+                enabled = st.checkbox("enabled", value=current.enabled if current else True)
+                location = st.text_input("location", value=current.location if current else "")
+                department = st.text_input("department", value=current.department if current else "")
+                site_name = st.text_input("site_name", value=current.site_name if current else "Default Site")
+                building_name = st.text_input("building_name", value=current.building_name if current else "Main Building")
+                floor_name = st.text_input("floor_name", value=current.floor_name if current else "Floor 1")
+                workshop_name = st.text_input("workshop_name", value=current.workshop_name if current else "Workshop A")
+                zone_name = st.text_input("zone_name", value=current.zone_name if current else "Zone A")
+                responsible_department = st.text_input(
+                    "responsible_department",
+                    value=current.responsible_department if current else department,
+                )
+                alert_emails = st.text_input(
+                    "alert_emails",
+                    value=",".join(current.alert_emails) if current else "",
+                    help="Separate multiple recipients with commas.",
+                )
+                default_person_id = st.text_input("default_person_id", value=current.default_person_id if current else "")
+                save_submit = st.form_submit_button("Save to Runtime Config")
     if save_submit and camera_id:
         source_value = source_ref.strip() or raw_source
         if not _is_safe_camera_source_reference(source_value):
