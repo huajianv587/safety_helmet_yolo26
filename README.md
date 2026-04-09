@@ -137,7 +137,9 @@ Important variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `HELMET_RTSP_URL`
+- `HELMET_PUBLISH_URL`
+- `HELMET_MONITOR_STREAM_URL`
+- `camera_use_laptop_camera=true` to force the worker onto the local laptop webcam for demo recording
 - `OPENAI_API_KEY`
 - `DEEPSEEK_API_KEY`
 - `SMTP_HOST`
@@ -146,6 +148,12 @@ Important variables:
 - `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
 - `ALERT_EMAIL_RECIPIENTS`
+- `HELMET_AUTH_USERS_FILE` or `HELMET_AUTH_ADMIN_*`
+
+Console auth note:
+
+- When Docker Compose reads `.env`, escape password hash separators as `$$` in `HELMET_AUTH_ADMIN_PASSWORD_HASH`
+- Or prefer `HELMET_AUTH_USERS_FILE=artifacts/runtime/ops/auth_users.json` for Docker-friendly managed accounts
 
 Detailed rollout references:
 
@@ -237,6 +245,8 @@ Useful health / ops commands:
 
 Use this mode when you want to detect directly from the computer webcam.
 
+You can also keep `configs/runtime.json` as the main config and set `camera_use_laptop_camera=true` in `.env` to force the monitor onto the local webcam for a quick demo session.
+
 ```bash
 start_desktop_webcam.cmd
 ```
@@ -258,7 +268,8 @@ Why this path exists:
 Use this mode when the camera source is an RTSP / HTTP stream, including a phone camera app that publishes a stream URL.
 
 1. Update the camera source in `configs/runtime.json`
-2. Put your iPhone stream URL into `.env` as `HELMET_RTSP_URL=...`
+2. Put your phone publish target into `.env` as `HELMET_PUBLISH_URL=rtmp://<HOST_LAN_IP>:1935/live/stream`
+3. Keep the Docker monitor source fixed at `HELMET_MONITOR_STREAM_URL=rtmp://rtmp-gateway:1935/live/stream`
 3. Start the full stack:
 
 ```bash
@@ -272,6 +283,12 @@ docker compose up -d --build
 ```
 
 In this mode, the Docker `monitor` service starts automatically and begins detection as soon as the configured stream is reachable.
+
+Recommended stability path:
+
+- phone app pushes RTMP to the host LAN IP on port `1935`
+- Docker `rtmp-gateway` stays as the fixed relay endpoint
+- `monitor` reads the stable in-cluster relay URL instead of a phone app's temporary direct URL
 
 ## Product Pages
 
@@ -364,9 +381,11 @@ Run a synthetic end-to-end closure smoke that covers:
 ## Deployment Notes
 
 - For production RTSP, prefer FFmpeg/GStreamer around the stream layer rather than relying only on bare OpenCV
+- For phone cameras, prefer RTMP push into the built-in `rtmp-gateway` relay instead of pointing the worker at a temporary phone URL
 - The current worker already supports a built-in tracker and Ultralytics ByteTrack mode
 - Use private Supabase buckets plus signed URLs for formal deployments
 - If you see a startup error that `/dev/video0` is unavailable inside Docker, switch to the Windows laptop webcam mode above or replace the source with RTSP / HTTP
 - `scripts/smoke_product.py --strict-runtime --use-model --require-model-detection --final-status ignored` is intended for pre-release validation and may write smoke-test alerts/evidence to the configured backend
 - Rotate any previously exposed `service_role` keys before production use
 - Prefer the project `.venv` for training and model smoke tests because the system Python may not contain `ultralytics`
+- If you keep bootstrap admin credentials in `.env`, write `HELMET_AUTH_ADMIN_PASSWORD_HASH` with `$$` separators so Docker Compose does not truncate the hash

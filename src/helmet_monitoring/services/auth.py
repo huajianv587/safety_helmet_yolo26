@@ -105,6 +105,11 @@ def _parse_password_hash(password_hash: str) -> tuple[int, bytes, bytes] | None:
     return iterations, salt, digest
 
 
+def _normalize_password_hash_text(value: str | None) -> str:
+    # Docker Compose users often escape "$" as "$$" inside .env files.
+    return str(value or "").strip().replace("$$", "$")
+
+
 def _parse_env_int(env: Mapping[str, str], key: str, default: int, minimum: int) -> int:
     raw_value = str(env.get(key, "")).strip()
     if not raw_value:
@@ -287,7 +292,7 @@ def require_permission(role: str | None, permission: str) -> None:
 
 def _account_from_payload(payload: Mapping[str, object], *, source: str) -> AuthAccount | None:
     username = _normalize_username(str(payload.get("username", "")))
-    password_hash = str(payload.get("password_hash") or "").strip()
+    password_hash = _normalize_password_hash_text(payload.get("password_hash"))
     if not username or not password_hash:
         return None
     if _parse_password_hash(password_hash) is None:
@@ -406,7 +411,7 @@ def delete_managed_auth_account(
 def load_bootstrap_admin_account(env: Mapping[str, str] | None = None) -> AuthAccount | None:
     raw_env = env if env is not None else os.environ
     username = _normalize_username(raw_env.get("HELMET_AUTH_ADMIN_USERNAME", ""))
-    password_hash = str(raw_env.get("HELMET_AUTH_ADMIN_PASSWORD_HASH", "")).strip()
+    password_hash = _normalize_password_hash_text(raw_env.get("HELMET_AUTH_ADMIN_PASSWORD_HASH", ""))
     if not username or not password_hash:
         return None
     if _parse_password_hash(password_hash) is None:
@@ -599,4 +604,3 @@ def clear_login_failures(
         users.pop(normalized, None)
         payload["updated_at"] = utc_now().isoformat()
         _atomic_write_json(target, payload)
-

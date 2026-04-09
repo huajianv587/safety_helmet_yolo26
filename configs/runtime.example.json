@@ -117,8 +117,8 @@
     },
     {
       "camera_id": "cam-rtsp-001",
-      "camera_name": "Workshop RTSP Camera",
-      "source": "rtsp://user:password@192.168.1.100:554/stream1",
+      "camera_name": "Phone Relay Camera",
+      "source": "${HELMET_MONITOR_STREAM_URL:rtmp://rtmp-gateway:1935/live/stream}",
       "location": "Workshop Line 1",
       "department": "Production",
       "enabled": true,

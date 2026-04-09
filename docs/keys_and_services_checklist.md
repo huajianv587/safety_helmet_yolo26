@@ -54,6 +54,7 @@ Purpose:
 
 - GPU or strong inference machine
 - RTSP-capable camera or sample MP4 source
+- phone RTMP push app plus a fixed relay target such as `HELMET_PUBLISH_URL -> HELMET_MONITOR_STREAM_URL`
 - annotation workflow such as CVAT / Label Studio / Roboflow
 
 ## 3. What you need to provide manually

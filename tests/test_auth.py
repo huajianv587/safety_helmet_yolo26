@@ -48,6 +48,16 @@ class AuthServiceTest(unittest.TestCase):
         self.assertEqual(accounts[0].role, "admin")
         self.assertEqual(accounts[0].display_name, "Safety Admin")
 
+    def test_load_bootstrap_admin_accepts_docker_escaped_hash(self) -> None:
+        env = {
+            "HELMET_AUTH_ADMIN_USERNAME": "admin",
+            "HELMET_AUTH_ADMIN_PASSWORD_HASH": hash_password("AdminPass!2026").replace("$", "$$"),
+            "HELMET_AUTH_ADMIN_ROLE": "admin",
+        }
+        identity = authenticate_user("admin", "AdminPass!2026", env)
+        self.assertIsNotNone(identity)
+        self.assertEqual(identity.role, "admin")
+
     def test_authenticate_user_accepts_json_accounts(self) -> None:
         env = {
             "HELMET_AUTH_USERS_JSON": json.dumps(

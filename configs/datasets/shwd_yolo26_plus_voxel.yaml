@@ -1,0 +1,6 @@
+path: .
+train: data/helmet_detection_dataset_merged_voxel/train.txt
+val: data/helmet_detection_dataset_merged_voxel/val.txt
+names:
+  0: helmet
+  1: no_helmet

@@ -235,6 +235,19 @@ def _normalize_env_text(value: str | None) -> str:
     return cleaned
 
 
+def _env_flag(*names: str) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None and name.lower() != name:
+            raw = os.getenv(name.lower())
+        if raw is None and name.upper() != name:
+            raw = os.getenv(name.upper())
+        if raw is None:
+            continue
+        return _normalize_env_text(raw).lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def _resolve_env_placeholder(value: str | None) -> str:
     cleaned = _normalize_env_text(value)
     if not cleaned.startswith("${") or not cleaned.endswith("}"):
@@ -284,6 +297,36 @@ def _parse_ignore_zones(raw_value: dict[str, Any] | None) -> dict[str, tuple[dic
     return output
 
 
+def _looks_like_local_camera(camera: dict[str, Any]) -> bool:
+    source = _resolve_env_placeholder(str(camera.get("source", ""))).strip()
+    if source.isdigit():
+        return True
+    camera_id = str(camera.get("camera_id", "")).strip().lower()
+    camera_name = str(camera.get("camera_name", "")).strip().lower()
+    local_markers = ("local", "laptop", "webcam", "desktop")
+    return any(marker in camera_id or marker in camera_name for marker in local_markers)
+
+
+def _apply_laptop_camera_override(cameras_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not _env_flag("camera_use_laptop_camera", "CAMERA_USE_LAPTOP_CAMERA"):
+        return [dict(camera) for camera in cameras_raw]
+
+    cameras = [dict(camera) for camera in cameras_raw]
+    local_index = next((idx for idx, camera in enumerate(cameras) if _looks_like_local_camera(camera)), None)
+    if local_index is None:
+        if not cameras:
+            return cameras
+        cameras[0]["source"] = "0"
+        cameras[0]["enabled"] = True
+        for idx in range(1, len(cameras)):
+            cameras[idx]["enabled"] = False
+        return cameras
+
+    for idx, camera in enumerate(cameras):
+        camera["enabled"] = idx == local_index
+    return cameras
+
+
 def load_settings(config_path: str | Path | None = None) -> AppSettings:
     _load_env_files()
     env_config_path = os.getenv("HELMET_CONFIG_PATH", "configs/runtime.json")
@@ -308,7 +351,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
     clip_raw = raw.get("clip", {})
     notification_raw = raw.get("notifications", {})
     security_raw = raw.get("security", {})
-    cameras_raw = raw.get("cameras", [])
+    cameras_raw = _apply_laptop_camera_override(raw.get("cameras", []))
 
     default_recipients = os.getenv("ALERT_EMAIL_RECIPIENTS", "")
 
