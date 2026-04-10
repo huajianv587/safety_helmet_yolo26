@@ -821,17 +821,36 @@ def _live_preview_proxy_path() -> str:
 
 
 @st.cache_resource
-def _cached_live_preview_server(live_frames_dir: str, bind_host: str, port: int, _settings):
+def _cached_live_preview_server(
+    live_frames_dir: str,
+    bind_host_or_port,
+    port_or_settings=None,
+    _settings=None,
+):
+    bind_host = _live_preview_bind_host()
+    port = port_or_settings
+    settings = _settings
+    if isinstance(bind_host_or_port, str):
+        bind_host = bind_host_or_port or _live_preview_bind_host()
+    else:
+        port = bind_host_or_port
+        settings = port_or_settings
+
+    if port is None:
+        port = _live_preview_port()
+
     try:
         preview_module = importlib.reload(live_preview_stream_module)
         start_server = preview_module.start_live_preview_server
+        parameters = inspect.signature(start_server).parameters
         kwargs = {
             "live_frames_dir": live_frames_dir,
-            "host": bind_host,
             "port": port,
         }
-        if "settings" in inspect.signature(start_server).parameters:
-            kwargs["settings"] = _settings
+        if "host" in parameters:
+            kwargs["host"] = bind_host
+        if "settings" in parameters:
+            kwargs["settings"] = settings
         return start_server(**kwargs)
     except OSError as exc:
         return {"error": str(exc), "host": bind_host, "port": port}

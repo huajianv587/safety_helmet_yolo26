@@ -63,9 +63,15 @@ class StubLlmFallback:
 
 
 class StubDirectory:
-    def __init__(self, people_by_id: dict[str, dict], people_by_employee_id: dict[str, dict]) -> None:
+    def __init__(
+        self,
+        people_by_id: dict[str, dict],
+        people_by_employee_id: dict[str, dict],
+        default_person: dict | None = None,
+    ) -> None:
         self.people_by_id = people_by_id
         self.people_by_employee_id = people_by_employee_id
+        self.default_person = default_person
 
     def get_person_by_id(self, person_id: str | None) -> dict | None:
         if not person_id:
@@ -82,6 +88,9 @@ class StubDirectory:
 
     def get_face_profiles(self) -> list:
         return []
+
+    def suggest_default_person_for_camera(self, camera) -> dict | None:  # noqa: ANN001
+        return self.default_person
 
 
 def build_settings(registry_path: Path) -> AppSettings:
@@ -220,6 +229,48 @@ class IdentityResolverTest(unittest.TestCase):
             self.assertEqual(result.person_id, "person-002")
             self.assertEqual(result.identity_status, "review_required")
             self.assertEqual(result.identity_source, "camera_default_registry")
+
+    def test_registry_camera_binding_can_supply_default_person(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry_path = Path(temp_dir) / "persons.json"
+            registry_path.write_text("[]", encoding="utf-8")
+            settings = build_settings(registry_path)
+            resolver = IdentityResolver(settings)
+            person = {
+                "person_id": "person-003",
+                "name": "Wang Wu",
+                "employee_id": "E10003",
+                "department": "Safety",
+                "team": "Shift C",
+                "role": "Inspector",
+                "phone": "13800000003",
+                "_default_match_score": 2.7,
+            }
+            resolver.directory = StubDirectory(
+                people_by_id={person["person_id"]: person},
+                people_by_employee_id={},
+                default_person=person,
+            )
+            resolver.badge_ocr = StubBadgeOcr(
+                BadgeOcrResult(text=None, confidence=None, provider="none", employee_id_hint=None, crop=None)
+            )
+            resolver.face_recognition = StubFaceRecognition(
+                FaceMatchResult(person=None, similarity=None, crop=None, provider="none")
+            )
+            resolver.llm_fallback = StubLlmFallback()
+
+            camera = CameraSettings(
+                camera_id="cam-local-001",
+                camera_name="Laptop Camera",
+                source="0",
+                location="Safety Lab",
+                department="Safety",
+            )
+
+            result = resolver.resolve(camera, build_candidate(), np.zeros((240, 320, 3), dtype=np.uint8))
+            self.assertEqual(result.person_id, "person-003")
+            self.assertEqual(result.identity_status, "review_required")
+            self.assertEqual(result.identity_source, "camera_default_registry_match")
 
 
 if __name__ == "__main__":

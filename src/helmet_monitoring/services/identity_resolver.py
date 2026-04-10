@@ -76,8 +76,24 @@ class IdentityResolver:
         self.face_recognition = FaceRecognitionService(settings)
         self.llm_fallback = LlmFallbackService(settings)
 
-    def _resolve_camera_default(self, camera: CameraSettings) -> dict | None:
-        return self.directory.get_person_by_id(camera.default_person_id)
+    def _resolve_camera_default(self, camera: CameraSettings) -> tuple[dict | None, str | None, float | None, str | None]:
+        explicit = self.directory.get_person_by_id(camera.default_person_id)
+        if explicit:
+            return (
+                explicit,
+                "camera_default_registry",
+                0.35,
+                "Resolved by the explicit camera default person rule because OCR/face matching did not finalize.",
+            )
+        suggested = self.directory.suggest_default_person_for_camera(camera)
+        if suggested:
+            return (
+                suggested,
+                "camera_default_registry_match",
+                float(suggested.get("_default_match_score", 0.42)) / 10.0,
+                "Resolved by registry camera-binding metadata because OCR/face matching did not finalize.",
+            )
+        return None, None, None, None
 
     def _resolve_from_badge(self, raw_text: str | None) -> tuple[dict | None, list[dict]]:
         if not raw_text:
@@ -188,19 +204,19 @@ class IdentityResolver:
                 badge_crop=badge_result.crop,
             )
 
-        default_person = self._resolve_camera_default(camera)
+        default_person, default_source, default_confidence, default_note = self._resolve_camera_default(camera)
         if default_person:
             return _person_to_result(
                 self.settings,
                 camera,
                 default_person,
                 identity_status="review_required",
-                identity_source="camera_default_registry",
-                identity_confidence=0.35,
+                identity_source=default_source or "camera_default_registry",
+                identity_confidence=default_confidence,
                 badge_text=badge_result.text,
                 badge_confidence=badge_result.confidence,
                 face_match_score=face_match.similarity,
-                review_note="Resolved by camera default person rule because OCR/face matching did not finalize.",
+                review_note=default_note,
                 face_crop=face_match.crop,
                 badge_crop=badge_result.crop,
             )

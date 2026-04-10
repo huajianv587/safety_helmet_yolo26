@@ -52,7 +52,15 @@ def _print_report(report: dict) -> None:
         f"val:{report['dataset']['val_images']} "
         f"exists:{str(report['dataset']['exists']).lower()}"
     )
-    print(f"registry={report['identity']['registry_people']} people exists:{str(report['identity']['registry_exists']).lower()}")
+    print(
+        "registry="
+        f"{report['identity']['registry_people']} people "
+        f"exists:{str(report['identity']['registry_exists']).lower()} "
+        f"aliases:{report['identity'].get('people_with_aliases', 0)} "
+        f"badge_keywords:{report['identity'].get('people_with_badge_keywords', 0)} "
+        f"camera_bindings:{report['identity'].get('people_with_camera_bindings', 0)} "
+        f"face_sample_people:{report['identity'].get('people_with_face_samples', 0)}"
+    )
     for check in report["checks"]:
         print(f"[{check['status']}] {check['name']} - {check['detail']}")
     if report["next_actions"]:

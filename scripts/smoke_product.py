@@ -60,6 +60,23 @@ def parse_args() -> argparse.Namespace:
         choices=["false_positive", "remediated", "ignored"],
         help="Final workflow state to apply after creation.",
     )
+    parser.add_argument(
+        "--notification-mode",
+        default="auto",
+        choices=["auto", "smtp", "dry_run", "skip"],
+        help="Notification validation mode. auto=smtp when configured, otherwise dry_run.",
+    )
+    parser.add_argument(
+        "--notification-recipient",
+        action="append",
+        default=[],
+        help="Repeatable recipient override used by the smoke notification validation.",
+    )
+    parser.add_argument(
+        "--require-notification-success",
+        action="store_true",
+        help="Fail unless at least one smoke notification is sent successfully in SMTP mode.",
+    )
     return parser.parse_args()
 
 
@@ -81,6 +98,43 @@ def _select_camera(settings) -> CameraSettings:
         zone_name="Bench 1",
         responsible_department="QA",
     )
+
+
+def _dedupe_recipients(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        recipient = str(raw).strip()
+        if not recipient:
+            continue
+        normalized = recipient.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(recipient)
+    return tuple(ordered)
+
+
+def _resolve_notification_mode(settings, args: argparse.Namespace) -> str:
+    if args.notification_mode != "auto":
+        return args.notification_mode
+    if settings.notifications.is_email_configured:
+        return "smtp"
+    return "dry_run"
+
+
+def _resolve_notification_recipients(settings, camera: CameraSettings, args: argparse.Namespace) -> tuple[str, ...]:
+    configured: list[str] = []
+    configured.extend(args.notification_recipient or [])
+    configured.extend(camera.alert_emails)
+    configured.extend(settings.notifications.default_recipients)
+    if settings.notifications.is_email_configured:
+        fallback_recipient = settings.notifications.smtp_from_email or settings.notifications.smtp_username
+        if fallback_recipient:
+            configured.append(fallback_recipient)
+    if not configured:
+        configured.append("smoke@example.local")
+    return _dedupe_recipients(configured)
 
 
 def _normalize_label(value: str) -> str:
@@ -422,10 +476,12 @@ def main() -> None:
         }
     )
 
-    recipients: tuple[str, ...] = ()
-    if not settings.notifications.is_email_configured:
-        recipients = ("smoke@example.local",)
-    notifier.send_alert_email(alert, recipients)
+    notification_mode = _resolve_notification_mode(settings, args)
+    recipients = _resolve_notification_recipients(settings, camera, args)
+    if notification_mode == "smtp":
+        notifier.send_alert_email(alert, recipients)
+    elif notification_mode == "dry_run":
+        notifier.simulate_alert_email(alert, recipients, reason="smoke_product")
     workflow.assign(
         alert.to_record(),
         actor="smoke.operator",
@@ -448,6 +504,18 @@ def main() -> None:
     hard_cases = repository.list_hard_cases(alert_id=alert_id, limit=20)
     final_alert = repository.get_alert(alert_id) or {}
 
+    if notification_mode != "skip" and not notification_logs:
+        raise RuntimeError("Smoke notification validation did not create any notification log records.")
+    if args.require_notification_success and notification_mode == "smtp":
+        sent_count = sum(1 for item in notification_logs if str(item.get("status") or "").strip().lower() == "sent")
+        if sent_count <= 0:
+            raise RuntimeError("Smoke notification validation did not send any successful SMTP notifications.")
+
+    notification_statuses = ",".join(
+        str(item.get("status") or "--")
+        for item in notification_logs
+    )
+
     print(f"backend={repository.backend_name}")
     print(f"event_no={event_no}")
     print(f"model_name={model_name}")
@@ -455,6 +523,9 @@ def main() -> None:
     print(f"snapshot_path={snapshot_path}")
     print(f"clip_path={clip_path}")
     print(f"identity_status={resolved_person.identity_status}")
+    print(f"notification_mode={notification_mode}")
+    print(f"notification_recipients={','.join(recipients)}")
+    print(f"notification_statuses={notification_statuses}")
     print(f"final_status={final_alert.get('status')}")
     print(f"actions={len(alert_actions)}")
     print(f"notifications={len(notification_logs)}")

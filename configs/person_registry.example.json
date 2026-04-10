@@ -6,7 +6,12 @@
     "department": "Safety",
     "team": "Shift A",
     "role": "Inspector",
-    "phone": "13800000001"
+    "phone": "13800000001",
+    "aliases": ["ZS", "ZhangSan"],
+    "badge_keywords": ["ZHANG", "E10001"],
+    "default_camera_ids": ["cam-local-001"],
+    "default_camera_names": ["Laptop Camera"],
+    "default_locations": ["Safety Lab"]
   },
   {
     "person_id": "person-002",
@@ -15,6 +20,12 @@
     "department": "Production",
     "team": "Shift B",
     "role": "Worker",
-    "phone": "13800000002"
+    "phone": "13800000002",
+    "aliases": ["LS"],
+    "badge_keywords": ["LISI", "E10002"],
+    "default_camera_ids": ["cam-rtsp-001"],
+    "default_camera_names": ["Phone Stream Camera"],
+    "default_workshop_names": ["Line A"],
+    "default_zone_names": ["Gate 1"]
   }
 ]

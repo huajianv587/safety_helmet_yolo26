@@ -33,12 +33,29 @@ class NotificationService:
         )
         message = EmailMessage()
         message["Subject"] = subject
-        message["From"] = self.settings.notifications.smtp_from_email
+        message["From"] = self.settings.notifications.smtp_from_email or self.settings.notifications.smtp_username or "no-reply@localhost"
         message["To"] = recipient
         message.set_content(body)
         return message
 
-    def _log(self, alert: AlertRecord, recipient: str, subject: str, status: str, error_message: str | None) -> None:
+    def _log(
+        self,
+        alert: AlertRecord,
+        recipient: str,
+        subject: str,
+        status: str,
+        error_message: str | None,
+        *,
+        payload_extra: dict | None = None,
+    ) -> None:
+        payload = {
+            "camera_name": alert.camera_name,
+            "location": alert.location,
+            "snapshot_url": alert.snapshot_url,
+            "clip_url": alert.clip_url,
+        }
+        if payload_extra:
+            payload.update(payload_extra)
         self.repository.insert_notification_log(
             NotificationLogRecord(
                 notification_id=uuid.uuid4().hex,
@@ -49,15 +66,27 @@ class NotificationService:
                 subject=subject,
                 status=status,
                 error_message=error_message,
-                payload={
-                    "camera_name": alert.camera_name,
-                    "location": alert.location,
-                    "snapshot_url": alert.snapshot_url,
-                    "clip_url": alert.clip_url,
-                },
+                payload=payload,
                 created_at=utc_now(),
             ).to_record()
         )
+
+    def simulate_alert_email(self, alert: AlertRecord, recipients: tuple[str, ...], *, reason: str = "dry_run") -> None:
+        for recipient in recipients:
+            message = self._build_email(recipient, alert)
+            body_preview = "\n".join(str(message.get_content()).splitlines()[:4])
+            self._log(
+                alert,
+                recipient,
+                message["Subject"],
+                "dry_run",
+                f"Notification dry-run verified without SMTP delivery ({reason}).",
+                payload_extra={
+                    "mode": reason,
+                    "body_preview": body_preview,
+                    "from_email": message["From"],
+                },
+            )
 
     def send_alert_email(self, alert: AlertRecord, recipients: tuple[str, ...]) -> None:
         if not recipients:

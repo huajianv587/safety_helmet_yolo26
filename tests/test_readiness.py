@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -171,6 +172,56 @@ class ReadinessTest(unittest.TestCase):
             checks = {item["name"]: item for item in report["checks"]}
             self.assertIn("camera_secret_refs", checks)
             self.assertEqual(checks["camera_secret_refs"]["status"], "warn")
+
+    def test_collect_readiness_report_exposes_identity_coverage_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "configs").mkdir(parents=True, exist_ok=True)
+            (root / "configs" / "runtime.json").write_text("{}", encoding="utf-8")
+            (root / "app.py").write_text("pass\n", encoding="utf-8")
+            registry_path = root / "configs" / "person_registry.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "person_id": "person-001",
+                            "name": "Shift Lead",
+                            "department": "Safety",
+                            "aliases": ["Lead A"],
+                            "badge_keywords": ["SHIFT", "LEAD"],
+                            "default_camera_ids": ["cam-local-001"],
+                            "status": "active",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            face_dir = root / "artifacts" / "identity" / "faces" / "person-001"
+            face_dir.mkdir(parents=True, exist_ok=True)
+            (face_dir / "profile.jpg").write_bytes(b"fake")
+            settings = replace(
+                build_settings(root),
+                face_recognition=replace(build_settings(root).face_recognition, enabled=True, face_profile_dir=str(root / "artifacts" / "identity" / "faces")),
+            )
+            settings = replace(
+                settings,
+                cameras=(
+                    CameraSettings(
+                        camera_id="cam-local-001",
+                        camera_name="Laptop Camera",
+                        source="0",
+                        location="Lab",
+                        department="Safety",
+                    ),
+                ),
+            )
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False):
+                report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertEqual(checks["identity_coverage"]["status"], "ready")
+            self.assertEqual(checks["identity_face_samples"]["status"], "ready")
+            self.assertEqual(report["identity"]["people_with_camera_bindings"], 1)
+            self.assertEqual(report["identity"]["people_with_face_samples"], 1)
 
 
 if __name__ == "__main__":

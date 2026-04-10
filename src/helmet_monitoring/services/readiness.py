@@ -34,6 +34,8 @@ IDENTITY_DEPENDENCIES = (
     "rapidocr_onnxruntime",
 )
 
+IDENTITY_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
+
 
 @dataclass(slots=True)
 class ReadinessCheck:
@@ -56,6 +58,54 @@ def _load_people_count(registry_path: Path) -> int:
     if isinstance(payload, list):
         return len(payload)
     return 0
+
+
+def _load_people_records(registry_path: Path) -> list[dict[str, Any]]:
+    if not registry_path.exists():
+        return []
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict) and str(item.get("status", "active")).strip().lower() == "active"]
+
+
+def _split_registry_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        values = [str(item).strip() for item in value]
+    else:
+        values = [item.strip() for item in str(value).split(",")]
+    return [item for item in values if item]
+
+
+def _count_face_sample_people(face_profile_dir: Path, people: list[dict[str, Any]]) -> int:
+    total = 0
+    for person in people:
+        person_id = str(person.get("person_id") or "").strip()
+        if not person_id:
+            continue
+        target_dir = face_profile_dir / person_id
+        if not target_dir.exists():
+            continue
+        found = False
+        for item in target_dir.iterdir():
+            if item.is_file() and item.suffix.lower() in IDENTITY_IMAGE_SUFFIXES:
+                found = True
+                break
+        total += 1 if found else 0
+    return total
+
+
+def _count_people_with_fields(people: list[dict[str, Any]], *field_names: str) -> int:
+    total = 0
+    for person in people:
+        if any(_split_registry_values(person.get(field_name)) for field_name in field_names):
+            total += 1
+    return total
 
 
 def _read_text(path: Path) -> str:
@@ -156,6 +206,7 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     app_path = base / "app.py"
     model_path = settings.resolve_path(settings.model.path)
     registry_path = settings.resolve_path(settings.identity.registry_path)
+    face_profile_dir = settings.resolve_path(settings.face_recognition.face_profile_dir)
     dataset_root = base / "data" / "helmet_detection_dataset"
     dataset_train = dataset_root / "images" / "train"
     dataset_val = dataset_root / "images" / "val"
@@ -164,6 +215,22 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     missing_workspace = [str(path) for path in required_paths if not path.exists()]
     core_deps = {name: _package_available(name) for name in CORE_DEPENDENCIES}
     identity_deps = {name: _package_available(name) for name in IDENTITY_DEPENDENCIES}
+    people_records = _load_people_records(registry_path)
+    people_with_aliases = _count_people_with_fields(people_records, "aliases")
+    people_with_badge_keywords = _count_people_with_fields(people_records, "badge_keywords")
+    people_with_camera_bindings = _count_people_with_fields(
+        people_records,
+        "default_camera_ids",
+        "default_camera_names",
+        "default_locations",
+        "default_site_names",
+        "default_building_names",
+        "default_floor_names",
+        "default_workshop_names",
+        "default_zone_names",
+        "default_departments",
+    )
+    people_with_face_samples = _count_face_sample_people(face_profile_dir, people_records)
     supabase_ready = settings.supabase.is_configured
     smtp_ready = settings.notifications.is_email_configured
     openai_ready = bool(os.getenv("OPENAI_API_KEY", "").strip())
@@ -258,6 +325,36 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
                 f"Person registry found with {_load_people_count(registry_path)} records.",
             )
         )
+        if people_records:
+            if any((people_with_aliases, people_with_badge_keywords, people_with_camera_bindings, people_with_face_samples)):
+                checks.append(
+                    ReadinessCheck(
+                        "identity_coverage",
+                        "ready",
+                        "Identity coverage: "
+                        f"aliases={people_with_aliases} "
+                        f"badge_keywords={people_with_badge_keywords} "
+                        f"camera_bindings={people_with_camera_bindings} "
+                        f"face_sample_people={people_with_face_samples}.",
+                    )
+                )
+            else:
+                checks.append(
+                    ReadinessCheck(
+                        "identity_coverage",
+                        "warn",
+                        "Identity registry exists, but aliases / badge keywords / camera bindings / face samples are all still empty.",
+                    )
+                )
+            if settings.face_recognition.enabled:
+                face_status = "ready" if people_with_face_samples > 0 else "warn"
+                checks.append(
+                    ReadinessCheck(
+                        "identity_face_samples",
+                        face_status,
+                        f"People with local face samples: {people_with_face_samples}/{len(people_records)}.",
+                    )
+                )
     else:
         checks.append(ReadinessCheck("person_registry", "missing", f"Missing person registry: {registry_path}"))
 
@@ -406,6 +503,13 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
         next_actions.append("Run python scripts/bootstrap_workspace.py to create the industrial workspace scaffold.")
     if not registry_path.exists():
         next_actions.append("Prepare configs/person_registry.json and sync it with python scripts/sync_person_registry.py.")
+    elif people_records:
+        if people_with_camera_bindings <= 0:
+            next_actions.append("Bind default people to cameras with python scripts/bootstrap_identity_defaults.py --apply after enriching person_registry.json.")
+        if settings.face_recognition.enabled and people_with_face_samples <= 0:
+            next_actions.append("Add local face samples under artifacts/identity/faces/<person_id>/ and rerun python scripts/register_face_profiles.py.")
+        if people_with_aliases <= 0 and people_with_badge_keywords <= 0:
+            next_actions.append("Add aliases and badge_keywords to person_registry.json so OCR and fuzzy matching have stronger identity hints.")
     if not gateway_config.exists():
         next_actions.append("Create deploy/caddy/Caddyfile and enable the edge gateway profile for HTTPS / reverse proxy rollout.")
     if settings.face_recognition.enabled and not (identity_deps["torch"] and identity_deps["facenet_pytorch"]):
@@ -438,7 +542,11 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
             "registry_path": str(registry_path),
             "registry_exists": registry_path.exists(),
             "registry_people": _load_people_count(registry_path),
-            "face_profile_dir": str(settings.resolve_path(settings.face_recognition.face_profile_dir)),
+            "face_profile_dir": str(face_profile_dir),
+            "people_with_aliases": people_with_aliases,
+            "people_with_badge_keywords": people_with_badge_keywords,
+            "people_with_camera_bindings": people_with_camera_bindings,
+            "people_with_face_samples": people_with_face_samples,
         },
         "dataset": {
             "root": str(dataset_root),

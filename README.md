@@ -78,11 +78,18 @@ safety_helmet_yolo26/
 │  ├─ start_desktop_webcam.cmd        # Browser local-webcam demo launcher
 │  ├─ start_realtime_webcam.cmd       # Desktop real-time viewer launcher
 │  ├─ start_stream_docker.cmd         # Docker stream-mode launcher
+│  ├─ start_dashboard_service.cmd     # Managed dashboard service launcher
+│  ├─ start_monitor_service.cmd       # Managed monitor service launcher
+│  ├─ start_host_services.cmd         # Launch both managed services
 │  ├─ doctor.py                       # Environment and dependency diagnostics
 │  ├─ check_supabase.py               # Supabase readiness checker
 │  ├─ smoke_product.py                # End-to-end smoke tests
+│  ├─ validate_notification_delivery.py # Independent notification delivery validation
+│  ├─ bootstrap_identity_defaults.py  # Suggest/apply default people for cameras
+│  ├─ identity_delivery_audit.py      # Identity data coverage audit
 │  ├─ dashboard_healthcheck.py        # Dashboard health probe
-│  └─ monitor_healthcheck.py          # Monitor worker health probe
+│  ├─ monitor_healthcheck.py          # Monitor worker health probe
+│  └─ install_windows_autostart.ps1   # Install Windows scheduled-task auto-start
 ├─ src/
 │  └─ helmet_monitoring/              # Core package (detection + monitoring + UI services)
 ├─ sql/                               # Supabase schema and extension scripts
@@ -408,6 +415,20 @@ Run strict validation:
 .venv\Scripts\python.exe scripts/smoke_product.py --strict-runtime --use-model --require-model-detection --final-status ignored
 ```
 
+Run notification-only validation:
+
+```bash
+.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode dry_run
+.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --recipient your@email.com
+```
+
+Audit identity coverage and default-person readiness:
+
+```bash
+.venv\Scripts\python.exe scripts/identity_delivery_audit.py
+.venv\Scripts\python.exe scripts/bootstrap_identity_defaults.py
+```
+
 Run tests:
 
 ```bash
@@ -421,6 +442,23 @@ Useful checks:
 .venv\Scripts\python.exe scripts/monitor_healthcheck.py
 .venv\Scripts\python.exe scripts/ops_status.py --json
 ```
+
+Managed local services:
+
+```bash
+start_dashboard_service.cmd
+start_monitor_service.cmd
+start_host_services.cmd
+```
+
+Install Windows auto-start tasks:
+
+```bash
+install_windows_autostart.cmd
+uninstall_windows_autostart.cmd
+```
+
+The installer prefers Windows Scheduled Tasks and automatically falls back to the user Startup folder when logon-task creation is blocked.
 
 ### Product Scope
 
@@ -495,7 +533,7 @@ Run a full cycle:
 #### Browser preview does not open automatically
 
 - manually open the URL printed in the terminal
-- default port is usually `8765`
+- default port is usually `8876`
 - check whether another process is already using the preview port
 
 #### Browser preview opens but no camera image appears
@@ -622,11 +660,18 @@ safety_helmet_yolo26/
 │  ├─ start_desktop_webcam.cmd        # 浏览器本机摄像头演示启动器
 │  ├─ start_realtime_webcam.cmd       # 本地桌面实时窗口启动器
 │  ├─ start_stream_docker.cmd         # Docker 流媒体模式启动器
+│  ├─ start_dashboard_service.cmd     # dashboard 托管服务启动器
+│  ├─ start_monitor_service.cmd       # monitor 托管服务启动器
+│  ├─ start_host_services.cmd         # 同时拉起两类托管服务
 │  ├─ doctor.py                       # 环境与依赖诊断脚本
 │  ├─ check_supabase.py               # Supabase 就绪检查脚本
 │  ├─ smoke_product.py                # 端到端冒烟测试脚本
+│  ├─ validate_notification_delivery.py # 独立通知链路验收脚本
+│  ├─ bootstrap_identity_defaults.py  # 摄像头默认负责人建议/回填脚本
+│  ├─ identity_delivery_audit.py      # 身份资料覆盖率审计脚本
 │  ├─ dashboard_healthcheck.py        # dashboard 健康检查
-│  └─ monitor_healthcheck.py          # monitor worker 健康检查
+│  ├─ monitor_healthcheck.py          # monitor worker 健康检查
+│  └─ install_windows_autostart.ps1   # Windows 自启动计划任务安装脚本
 ├─ src/
 │  └─ helmet_monitoring/              # 核心代码包（检测、监控、UI 服务）
 ├─ sql/                               # Supabase 建表与扩展 SQL
@@ -952,6 +997,20 @@ docker compose --profile edge up -d --build
 .venv\Scripts\python.exe scripts/smoke_product.py --strict-runtime --use-model --require-model-detection --final-status ignored
 ```
 
+单独验证通知链路：
+
+```bash
+.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode dry_run
+.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --recipient your@email.com
+```
+
+审计身份资料覆盖率和默认负责人准备度：
+
+```bash
+.venv\Scripts\python.exe scripts/identity_delivery_audit.py
+.venv\Scripts\python.exe scripts/bootstrap_identity_defaults.py
+```
+
 运行测试：
 
 ```bash
@@ -965,6 +1024,23 @@ docker compose --profile edge up -d --build
 .venv\Scripts\python.exe scripts/monitor_healthcheck.py
 .venv\Scripts\python.exe scripts/ops_status.py --json
 ```
+
+本地托管服务启动：
+
+```bash
+start_dashboard_service.cmd
+start_monitor_service.cmd
+start_host_services.cmd
+```
+
+安装 / 卸载 Windows 自启动任务：
+
+```bash
+install_windows_autostart.cmd
+uninstall_windows_autostart.cmd
+```
+
+现在安装器会优先尝试 Windows 计划任务；如果当前环境没有创建登录任务的权限，会自动降级为当前用户 Startup 启动项，不依赖 PowerShell。
 
 ### 当前产品能力
 
@@ -1039,7 +1115,7 @@ docker compose --profile edge up -d --build
 #### 浏览器预览没有自动打开
 
 - 手动打开终端里打印出来的 URL
-- 默认端口通常是 `8765`
+- 默认端口通常是 `8876`
 - 检查是否有其他进程占用了预览端口
 
 #### 浏览器页面打开了，但没有摄像头画面

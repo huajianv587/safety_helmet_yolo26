@@ -21,6 +21,16 @@ def normalize_text(value: str | None) -> str:
     return "".join(ch for ch in value.strip().upper() if ch.isalnum())
 
 
+def _tuple_from_person_values(value) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value]
+    else:
+        items = [item.strip() for item in str(value).split(",")]
+    return tuple(item for item in items if item)
+
+
 @dataclass(slots=True)
 class FaceProfileRecord:
     profile_id: str
@@ -134,6 +144,49 @@ class PersonDirectory:
                 return person
         return None
 
+    def suggest_default_person_for_camera(self, camera) -> dict | None:
+        self.refresh()
+        scored: list[tuple[float, dict]] = []
+        weighted_camera_fields = (
+            ("default_camera_ids", camera.camera_id, 3.2),
+            ("default_camera_names", camera.camera_name, 2.2),
+            ("default_locations", camera.location, 1.5),
+            ("default_site_names", getattr(camera, "site_name", ""), 1.1),
+            ("default_building_names", getattr(camera, "building_name", ""), 1.0),
+            ("default_floor_names", getattr(camera, "floor_name", ""), 0.9),
+            ("default_workshop_names", getattr(camera, "workshop_name", ""), 1.0),
+            ("default_zone_names", getattr(camera, "zone_name", ""), 1.0),
+            ("default_departments", getattr(camera, "responsible_department", "") or camera.department, 0.5),
+        )
+        for person in self._people_cache:
+            score = 0.0
+            for field_name, raw_camera_value, weight in weighted_camera_fields:
+                target = normalize_text(raw_camera_value)
+                if not target:
+                    continue
+                person_values = [normalize_text(item) for item in _tuple_from_person_values(person.get(field_name))]
+                if not person_values:
+                    continue
+                if target in person_values:
+                    score += weight
+                    continue
+                if any(target in item or item in target for item in person_values if item):
+                    score += weight * 0.7
+            if score > 0:
+                candidate = dict(person)
+                candidate["_default_match_score"] = round(float(score), 4)
+                scored.append((score, candidate))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        if not scored:
+            return None
+        top_score, top_candidate = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else 0.0
+        if top_score < 2.0:
+            return None
+        if second_score and (top_score - second_score) < 0.75:
+            return None
+        return top_candidate
+
     def search_candidates(self, query: str, limit: int = 5) -> list[dict]:
         target = normalize_text(query)
         if not target:
@@ -144,16 +197,27 @@ class PersonDirectory:
             employee = normalize_text(person.get("employee_id"))
             name = normalize_text(person.get("name"))
             department = normalize_text(person.get("department"))
-            combined = " ".join(part for part in [employee, name, department] if part)
+            team = normalize_text(person.get("team"))
+            role = normalize_text(person.get("role"))
+            aliases = [normalize_text(item) for item in _tuple_from_person_values(person.get("aliases"))]
+            badge_keywords = [normalize_text(item) for item in _tuple_from_person_values(person.get("badge_keywords"))]
+            tokens = [part for part in [employee, name, department, team, role, *aliases, *badge_keywords] if part]
+            combined = " ".join(tokens)
             score = max(
                 SequenceMatcher(None, target, employee).ratio() if employee else 0.0,
                 SequenceMatcher(None, target, name).ratio() if name else 0.0,
+                max((SequenceMatcher(None, target, alias).ratio() for alias in aliases), default=0.0),
+                max((SequenceMatcher(None, target, keyword).ratio() for keyword in badge_keywords), default=0.0),
                 SequenceMatcher(None, target, combined.replace(" ", "")).ratio() if combined else 0.0,
             )
             if employee and employee in target:
                 score = max(score, 0.98)
             if name and name in target:
                 score = max(score, 0.92)
+            if any(alias and alias in target for alias in aliases):
+                score = max(score, 0.95)
+            if any(keyword and keyword in target for keyword in badge_keywords):
+                score = max(score, 0.96)
             if score >= 0.45:
                 candidate = dict(person)
                 candidate["_match_score"] = round(float(score), 4)

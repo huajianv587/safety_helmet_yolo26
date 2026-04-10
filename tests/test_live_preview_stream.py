@@ -140,13 +140,13 @@ class LivePreviewStreamTest(unittest.TestCase):
                 ]
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            port = 8876
             with patch("helmet_monitoring.ui.live_preview_stream.BrowserInferenceEngine._get_detector", return_value=FakeDetector()):
                 handle = start_live_preview_server(
                     live_frames_dir=temp_dir,
-                    port=port,
+                    port=0,
                     settings=settings,
                 )
+                port = handle.server.server_address[1]
                 try:
                     time.sleep(0.1)
                     with urlopen(f"http://127.0.0.1:{port}/browser/cam-local-001", timeout=5) as response:
