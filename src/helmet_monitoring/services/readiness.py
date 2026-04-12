@@ -11,6 +11,11 @@ from typing import Any
 from helmet_monitoring.core.config import AppSettings, REPO_ROOT
 from helmet_monitoring.services.auth import auth_configuration_summary
 
+try:
+    from supabase import create_client
+except ImportError:  # pragma: no cover
+    create_client = None
+
 
 SUPPORTED_PYTHON_MINORS = {(3, 10), (3, 11)}
 RECOMMENDED_PYTHON_MINOR = (3, 11)
@@ -157,6 +162,17 @@ def _count_images(target: Path) -> int:
     return total
 
 
+def _identity_delivery_extension_ready(settings: AppSettings) -> bool | None:
+    if settings.repository_backend != "supabase" or not settings.supabase.is_configured or create_client is None:
+        return None
+    try:
+        client = create_client(settings.supabase.url, settings.supabase.service_role_key)
+        client.table("persons").select("aliases,badge_keywords,default_camera_ids").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 def workspace_paths(settings: AppSettings, repo_root: Path | None = None) -> list[Path]:
     base = repo_root or REPO_ROOT
     return [
@@ -236,6 +252,7 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
     openai_ready = bool(os.getenv("OPENAI_API_KEY", "").strip())
     deepseek_ready = bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
     auth_summary = auth_configuration_summary()
+    identity_delivery_extension_ready = _identity_delivery_extension_ready(settings)
 
     if python_minor == RECOMMENDED_PYTHON_MINOR:
         checks.append(ReadinessCheck("python_runtime", "ready", f"Python {sys.version.split()[0]} detected (recommended runtime)."))
@@ -454,6 +471,22 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
                         "Supabase evidence uploads are enabled, but use_private_bucket=false exposes public artifact URLs.",
                     )
                 )
+        if identity_delivery_extension_ready is True:
+            checks.append(
+                ReadinessCheck(
+                    "identity_delivery_extension",
+                    "ready",
+                    "Supabase persons table supports aliases, badge keywords, and camera binding metadata.",
+                )
+            )
+        elif identity_delivery_extension_ready is False:
+            checks.append(
+                ReadinessCheck(
+                    "identity_delivery_extension",
+                    "warn",
+                    "Supabase persons table is missing aliases / badge_keywords / default_camera_ids columns.",
+                )
+            )
 
     if smtp_ready:
         checks.append(ReadinessCheck("smtp", "ready", "SMTP notification settings are configured."))
@@ -493,6 +526,8 @@ def collect_readiness_report(settings: AppSettings, repo_root: Path | None = Non
         next_actions.append("Enable at least one real webcam, RTSP stream, or sample video in configs/runtime.json.")
     if settings.repository_backend == "supabase" and not supabase_ready:
         next_actions.append("Fill SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then rerun python scripts/check_supabase.py.")
+    if settings.repository_backend == "supabase" and identity_delivery_extension_ready is False:
+        next_actions.append("Run sql/supabase_identity_delivery_extension.sql so enhanced identity metadata can be stored in Supabase persons.")
     if (
         settings.repository_backend == "supabase"
         and settings.persistence.upload_to_supabase_storage

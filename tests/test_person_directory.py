@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +130,78 @@ class PersonDirectoryTest(unittest.TestCase):
         self.assertIsNotNone(suggestion)
         self.assertEqual(suggestion["person_id"], "person-001")
         self.assertGreaterEqual(suggestion["_default_match_score"], 2.0)
+
+    def test_merge_people_keeps_local_identity_hints_when_supabase_row_is_missing_columns(self) -> None:
+        directory = PersonDirectory(build_settings(Path("persons.json")))
+        merged = directory._merge_people(
+            [
+                {
+                    "person_id": "person-001",
+                    "name": "Shift Lead",
+                    "employee_id": "E20001",
+                    "department": "Safety",
+                    "status": "active",
+                }
+            ],
+            [
+                {
+                    "person_id": "person-001",
+                    "name": "Shift Lead",
+                    "employee_id": "E20001",
+                    "department": "Safety",
+                    "aliases": ["Lead A"],
+                    "badge_keywords": ["SHIFT", "LEAD"],
+                    "default_camera_ids": ["cam-local-001"],
+                    "status": "active",
+                }
+            ],
+        )
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["aliases"], ["Lead A"])
+        self.assertEqual(merged[0]["badge_keywords"], ["SHIFT", "LEAD"])
+        self.assertEqual(merged[0]["default_camera_ids"], ["cam-local-001"])
+
+    def test_supabase_people_are_enriched_with_registry_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry_path = Path(temp_dir) / "persons.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "person_id": "person-001",
+                            "name": "Huajian Jiang",
+                            "employee_id": "E90001",
+                            "department": "Safety",
+                            "aliases": ["HJ Jiang"],
+                            "badge_keywords": ["HUAJIAN"],
+                            "default_camera_ids": ["cam-local-001"],
+                            "status": "active",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            directory = PersonDirectory(build_settings(registry_path))
+            with patch.object(
+                directory,
+                "_load_people_from_supabase",
+                return_value=[
+                    {
+                        "person_id": "person-001",
+                        "name": "Huajian Jiang",
+                        "employee_id": "E90001",
+                        "department": "Safety",
+                        "status": "active",
+                    }
+                ],
+            ):
+                directory.refresh(force=True)
+                person = directory.get_person_by_id("person-001")
+
+        self.assertEqual(person["aliases"], ["HJ Jiang"])
+        self.assertEqual(person["badge_keywords"], ["HUAJIAN"])
+        self.assertEqual(person["default_camera_ids"], ["cam-local-001"])
 
 
 if __name__ == "__main__":

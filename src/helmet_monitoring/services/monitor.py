@@ -50,6 +50,63 @@ class SafetyHelmetMonitor:
         self._preview_state: dict[str, dict[str, str]] = {}
         self._preview_interval_seconds = 1.0 / max(1.0, float(self.settings.monitoring.preview_fps))
 
+    def _record_pipeline_error(
+        self,
+        stream: CameraStream,
+        stage: str,
+        exc: Exception,
+        *,
+        observed_at=None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        timestamp = observed_at or utc_now()
+        detail = f"{stage}: {exc}"
+        stream.last_error = detail
+        preview_state = self._preview_state.setdefault(stream.camera.camera_id, {})
+        preview_state["last_error"] = detail
+        preview_state["last_error_at"] = timestamp.isoformat()
+        try:
+            self._upsert_camera(stream, "error")
+        except Exception as camera_exc:
+            print(
+                "[monitor][error]",
+                f"camera={stream.camera.camera_id}",
+                "stage=upsert_camera_error",
+                f"error={camera_exc}",
+            )
+        try:
+            self.repository.insert_audit_log(
+                {
+                    "audit_id": uuid.uuid4().hex,
+                    "entity_type": "camera",
+                    "entity_id": stream.camera.camera_id,
+                    "action_type": "pipeline_error",
+                    "actor": "system",
+                    "actor_role": "worker",
+                    "payload": {
+                        "camera_name": stream.camera.camera_name,
+                        "stage": stage,
+                        "error": str(exc),
+                        **(payload or {}),
+                    },
+                    "created_at": timestamp.isoformat(),
+                }
+            )
+        except Exception as audit_exc:
+            print(
+                "[monitor][error]",
+                f"camera={stream.camera.camera_id}",
+                "stage=audit_log_error",
+                f"error={audit_exc}",
+            )
+        self._write_service_state("running", f"Camera {stream.camera.camera_name} {stage} failed: {exc}")
+        print(
+            "[monitor][error]",
+            f"camera={stream.camera.camera_id}",
+            f"stage={stage}",
+            f"error={exc}",
+        )
+
     def _persist_crop(self, camera_id: str, crop, alert_id: str, observed_at, category: str, suffix: str) -> tuple[str | None, str | None]:
         if crop is None:
             return None, None
@@ -219,6 +276,152 @@ class SafetyHelmetMonitor:
         self._write_preview_frame(stream, canvas, observed_at)
         self._last_preview_ts[stream.camera.camera_id] = now_ts
 
+    def _process_alert_candidate(self, stream: CameraStream, candidate, annotated, frame, observed_at) -> None:
+        governance = self.governance.evaluate(stream.camera, candidate, observed_at)
+        if not governance.allow:
+            return
+
+        resolved_person = self.identity_resolver.resolve(stream.camera, candidate, frame)
+        alert_id = uuid.uuid4().hex
+        event_no = self._event_no(stream.camera.camera_id, observed_at, alert_id)
+        snapshot_path, snapshot_url = self.evidence_store.save(
+            stream.camera.camera_id,
+            self._overlay_snapshot(stream, annotated, event_no, observed_at),
+            alert_id,
+            observed_at,
+        )
+        face_crop_path, face_crop_url = self._persist_crop(
+            stream.camera.camera_id,
+            resolved_person.face_crop,
+            alert_id,
+            observed_at,
+            "faces",
+            "face",
+        )
+        badge_crop_path, badge_crop_url = self._persist_crop(
+            stream.camera.camera_id,
+            resolved_person.badge_crop,
+            alert_id,
+            observed_at,
+            "badges",
+            "badge",
+        )
+        identity_status = resolved_person.identity_status
+        review_notes = [item for item in [resolved_person.review_note, governance.note] if item]
+        if governance.review_required and identity_status == "resolved":
+            identity_status = "review_required"
+
+        alert = AlertRecord(
+            alert_id=alert_id,
+            event_key=candidate.event_key,
+            event_no=event_no,
+            camera_id=stream.camera.camera_id,
+            camera_name=stream.camera.camera_name,
+            location=stream.camera.location,
+            department=stream.camera.department,
+            violation_type="no_helmet",
+            risk_level=governance.risk_level,
+            confidence=round(candidate.confidence, 4),
+            snapshot_path=snapshot_path,
+            snapshot_url=snapshot_url,
+            status="pending",
+            bbox=candidate.bbox,
+            model_name=Path(self.settings.model.path).name,
+            person_id=resolved_person.person_id,
+            person_name=resolved_person.person_name,
+            employee_id=resolved_person.employee_id,
+            team=resolved_person.team,
+            role=resolved_person.role,
+            phone=resolved_person.phone,
+            identity_status=identity_status,
+            identity_source=resolved_person.identity_source,
+            identity_confidence=resolved_person.identity_confidence,
+            badge_text=resolved_person.badge_text,
+            badge_confidence=resolved_person.badge_confidence,
+            face_match_score=resolved_person.face_match_score,
+            face_crop_path=face_crop_path,
+            face_crop_url=face_crop_url,
+            badge_crop_path=badge_crop_path,
+            badge_crop_url=badge_crop_url,
+            review_note=" ".join(review_notes) or None,
+            llm_provider=resolved_person.llm_provider,
+            llm_summary=resolved_person.llm_summary,
+            clip_path=None,
+            clip_url=None,
+            alert_source="cascade_pipeline",
+            governance_note=governance.note,
+            track_id=candidate.track_id,
+            site_name=stream.camera.site_name,
+            building_name=stream.camera.building_name,
+            floor_name=stream.camera.floor_name,
+            workshop_name=stream.camera.workshop_name,
+            zone_name=stream.camera.zone_name,
+            responsible_department=stream.camera.responsible_department or stream.camera.department,
+            created_at=observed_at,
+        )
+        self.repository.insert_alert(alert.to_record())
+        self._last_alert_event_no = alert.event_no
+        self.repository.insert_audit_log(
+            {
+                "audit_id": uuid.uuid4().hex,
+                "entity_type": "alert",
+                "entity_id": alert.alert_id,
+                "action_type": "created",
+                "actor": "system",
+                "actor_role": "worker",
+                "payload": {
+                    "event_no": alert.event_no,
+                    "risk_level": alert.risk_level,
+                    "identity_status": alert.identity_status,
+                },
+                "created_at": observed_at.isoformat(),
+            }
+        )
+        self.clip_recorder.start(stream.camera, alert.alert_id, alert.event_no or alert.alert_id, observed_at)
+        recipients = stream.camera.alert_emails or self.settings.notifications.default_recipients
+        self.notifier.send_alert_email(alert, recipients)
+        print(
+            "[alert]",
+            alert.event_no,
+            alert.camera_name,
+            alert.snapshot_path,
+            f"confidence={alert.confidence:.2f}",
+        )
+        self._write_service_state("running", f"Latest alert: {alert.event_no}")
+
+    def _process_online_frame(self, stream: CameraStream, frame, observed_at) -> None:
+        self._finalize_pending_clips(stream, frame, observed_at)
+        self._upsert_camera(stream, "online")
+        self._write_service_state("running", f"Camera {stream.camera.camera_name} is online.")
+
+        if stream.frames_seen % self.settings.monitoring.frame_stride != 0:
+            self._update_live_preview(stream, frame, observed_at)
+            return
+
+        detections = self.detector.detect(frame)
+        preview_frame = self.detector.annotate(frame, detections) if detections else frame
+        self._update_live_preview(stream, preview_frame, observed_at)
+        alert_candidates = self.event_engine.evaluate(
+            stream.camera.camera_id,
+            detections,
+            observed_at,
+        )
+        if not alert_candidates:
+            return
+
+        annotated = preview_frame
+        for candidate in alert_candidates:
+            try:
+                self._process_alert_candidate(stream, candidate, annotated, frame, observed_at)
+            except Exception as exc:
+                self._record_pipeline_error(
+                    stream,
+                    "alert_candidate",
+                    exc,
+                    observed_at=observed_at,
+                    payload={"event_key": candidate.event_key, "track_id": candidate.track_id},
+                )
+
     def run(self, max_frames: int | None = None) -> None:
         hard_limit = max_frames if max_frames is not None else self.settings.monitoring.max_frames
         processed_frames = 0
@@ -227,7 +430,15 @@ class SafetyHelmetMonitor:
         try:
             while True:
                 for stream in self.streams:
-                    success, frame = stream.read()
+                    try:
+                        success, frame = stream.read()
+                    except Exception as exc:
+                        self._record_pipeline_error(stream, "camera_read", exc)
+                        processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
+                        if should_stop:
+                            self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
+                            return
+                        continue
                     if not success:
                         self._mark_preview_offline(stream, utc_now())
                         self._upsert_camera(stream, "offline")
@@ -239,140 +450,10 @@ class SafetyHelmetMonitor:
                         continue
 
                     observed_at = utc_now()
-                    self._finalize_pending_clips(stream, frame, observed_at)
-                    self._upsert_camera(stream, "online")
-                    self._write_service_state("running", f"Camera {stream.camera.camera_name} is online.")
-
-                    if stream.frames_seen % self.settings.monitoring.frame_stride != 0:
-                        self._update_live_preview(stream, frame, observed_at)
-                        processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
-                        if should_stop:
-                            self._write_service_state("stopped", f"Frame limit reached at {hard_limit}.")
-                            return
-                        continue
-
-                    detections = self.detector.detect(frame)
-                    preview_frame = self.detector.annotate(frame, detections) if detections else frame
-                    self._update_live_preview(stream, preview_frame, observed_at)
-                    alert_candidates = self.event_engine.evaluate(
-                        stream.camera.camera_id,
-                        detections,
-                        observed_at,
-                    )
-                    if alert_candidates:
-                        annotated = preview_frame
-                        for candidate in alert_candidates:
-                            governance = self.governance.evaluate(stream.camera, candidate, observed_at)
-                            if not governance.allow:
-                                continue
-
-                            resolved_person = self.identity_resolver.resolve(stream.camera, candidate, frame)
-                            alert_id = uuid.uuid4().hex
-                            event_no = self._event_no(stream.camera.camera_id, observed_at, alert_id)
-                            snapshot_path, snapshot_url = self.evidence_store.save(
-                                stream.camera.camera_id,
-                                self._overlay_snapshot(stream, annotated, event_no, observed_at),
-                                alert_id,
-                                observed_at,
-                            )
-                            face_crop_path, face_crop_url = self._persist_crop(
-                                stream.camera.camera_id,
-                                resolved_person.face_crop,
-                                alert_id,
-                                observed_at,
-                                "faces",
-                                "face",
-                            )
-                            badge_crop_path, badge_crop_url = self._persist_crop(
-                                stream.camera.camera_id,
-                                resolved_person.badge_crop,
-                                alert_id,
-                                observed_at,
-                                "badges",
-                                "badge",
-                            )
-                            identity_status = resolved_person.identity_status
-                            review_notes = [item for item in [resolved_person.review_note, governance.note] if item]
-                            if governance.review_required and identity_status == "resolved":
-                                identity_status = "review_required"
-
-                            alert = AlertRecord(
-                                alert_id=alert_id,
-                                event_key=candidate.event_key,
-                                event_no=event_no,
-                                camera_id=stream.camera.camera_id,
-                                camera_name=stream.camera.camera_name,
-                                location=stream.camera.location,
-                                department=stream.camera.department,
-                                violation_type="no_helmet",
-                                risk_level=governance.risk_level,
-                                confidence=round(candidate.confidence, 4),
-                                snapshot_path=snapshot_path,
-                                snapshot_url=snapshot_url,
-                                status="pending",
-                                bbox=candidate.bbox,
-                                model_name=Path(self.settings.model.path).name,
-                                person_id=resolved_person.person_id,
-                                person_name=resolved_person.person_name,
-                                employee_id=resolved_person.employee_id,
-                                team=resolved_person.team,
-                                role=resolved_person.role,
-                                phone=resolved_person.phone,
-                                identity_status=identity_status,
-                                identity_source=resolved_person.identity_source,
-                                identity_confidence=resolved_person.identity_confidence,
-                                badge_text=resolved_person.badge_text,
-                                badge_confidence=resolved_person.badge_confidence,
-                                face_match_score=resolved_person.face_match_score,
-                                face_crop_path=face_crop_path,
-                                face_crop_url=face_crop_url,
-                                badge_crop_path=badge_crop_path,
-                                badge_crop_url=badge_crop_url,
-                                review_note=" ".join(review_notes) or None,
-                                llm_provider=resolved_person.llm_provider,
-                                llm_summary=resolved_person.llm_summary,
-                                clip_path=None,
-                                clip_url=None,
-                                alert_source="cascade_pipeline",
-                                governance_note=governance.note,
-                                track_id=candidate.track_id,
-                                site_name=stream.camera.site_name,
-                                building_name=stream.camera.building_name,
-                                floor_name=stream.camera.floor_name,
-                                workshop_name=stream.camera.workshop_name,
-                                zone_name=stream.camera.zone_name,
-                                responsible_department=stream.camera.responsible_department or stream.camera.department,
-                                created_at=observed_at,
-                            )
-                            self.repository.insert_alert(alert.to_record())
-                            self._last_alert_event_no = alert.event_no
-                            self.repository.insert_audit_log(
-                                {
-                                    "audit_id": uuid.uuid4().hex,
-                                    "entity_type": "alert",
-                                    "entity_id": alert.alert_id,
-                                    "action_type": "created",
-                                    "actor": "system",
-                                    "actor_role": "worker",
-                                    "payload": {
-                                        "event_no": alert.event_no,
-                                        "risk_level": alert.risk_level,
-                                        "identity_status": alert.identity_status,
-                                    },
-                                    "created_at": observed_at.isoformat(),
-                                }
-                            )
-                            self.clip_recorder.start(stream.camera, alert.alert_id, alert.event_no or alert.alert_id, observed_at)
-                            recipients = stream.camera.alert_emails or self.settings.notifications.default_recipients
-                            self.notifier.send_alert_email(alert, recipients)
-                            print(
-                                "[alert]",
-                                alert.event_no,
-                                alert.camera_name,
-                                alert.snapshot_path,
-                                f"confidence={alert.confidence:.2f}",
-                            )
-                            self._write_service_state("running", f"Latest alert: {alert.event_no}")
+                    try:
+                        self._process_online_frame(stream, frame, observed_at)
+                    except Exception as exc:
+                        self._record_pipeline_error(stream, "camera_pipeline", exc, observed_at=observed_at)
 
                     processed_frames, should_stop = self._advance_frame_budget(processed_frames, hard_limit)
                     if should_stop:

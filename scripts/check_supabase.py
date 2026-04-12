@@ -40,6 +40,11 @@ def main() -> None:
         except Exception:
             print("identity_extension=missing")
         try:
+            repository.client.table("persons").select("aliases,badge_keywords,default_camera_ids").limit(1).execute()
+            print("identity_delivery_extension=ready")
+        except Exception:
+            print("identity_delivery_extension=missing")
+        try:
             profile_response = (
                 repository.client.table("person_face_profiles").select("profile_id", count="exact").execute()
             )
@@ -67,6 +72,7 @@ def main() -> None:
         print(f"storage_access={'signed_urls' if settings.security.use_private_bucket else 'public_urls'}")
     elif settings.repository_backend == "supabase":
         print("identity_extension=unknown")
+        print("identity_delivery_extension=unknown")
         print("identity_ai_extension=unknown")
         print("product_extension=unknown")
         print("storage_bucket_ready=false")

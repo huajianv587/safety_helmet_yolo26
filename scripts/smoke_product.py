@@ -28,6 +28,7 @@ from helmet_monitoring.services.governance import FalsePositiveGovernance
 from helmet_monitoring.services.identity_resolver import build_identity_resolver
 from helmet_monitoring.services.notifier import NotificationService
 from helmet_monitoring.services.readiness import ensure_workspace_scaffold
+from helmet_monitoring.services.runtime_profiles import local_smoke_settings
 from helmet_monitoring.services.workflow import AlertWorkflowService
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import LocalAlertRepository, build_repository
@@ -338,10 +339,9 @@ def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
     if not args.strict_runtime:
+        settings = local_smoke_settings(settings)
         settings = replace(
             settings,
-            repository_backend="local",
-            persistence=replace(settings.persistence, upload_to_supabase_storage=False, keep_local_copy=True),
             face_recognition=replace(settings.face_recognition, enabled=False),
             ocr=replace(settings.ocr, enabled=False, provider="none"),
             llm_fallback=replace(settings.llm_fallback, enabled=False),

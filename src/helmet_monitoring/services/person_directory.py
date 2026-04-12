@@ -72,6 +72,27 @@ class PersonDirectory:
         except Exception:
             return []
 
+    @staticmethod
+    def _merge_people(supabase_people: list[dict], registry_people: list[dict]) -> list[dict]:
+        if not supabase_people:
+            return list(registry_people)
+
+        people_by_id: dict[str, dict] = {
+            str(item["person_id"]): dict(item)
+            for item in supabase_people
+            if item.get("person_id")
+        }
+        for registry_person in registry_people:
+            person_id = str(registry_person.get("person_id") or "")
+            if not person_id:
+                continue
+            merged = dict(people_by_id.get(person_id, {}))
+            for key, value in registry_person.items():
+                if key not in merged or value not in (None, "", [], (), {}):
+                    merged[key] = value
+            people_by_id[person_id] = merged
+        return list(people_by_id.values())
+
     def _load_face_profiles_from_supabase(self, people_by_id: dict[str, dict]) -> list[FaceProfileRecord]:
         if self.client is None:
             return []
@@ -110,7 +131,9 @@ class PersonDirectory:
     def refresh(self, force: bool = False) -> None:
         if not force and not self._refresh_due():
             return
-        people = self._load_people_from_supabase() or self._load_people_from_registry()
+        registry_people = self._load_people_from_registry()
+        supabase_people = self._load_people_from_supabase()
+        people = self._merge_people(supabase_people, registry_people) if supabase_people else registry_people
         people_by_id = {str(item["person_id"]): item for item in people if item.get("person_id")}
         profiles = self._load_face_profiles_from_supabase(people_by_id)
         self._people_cache = list(people_by_id.values())

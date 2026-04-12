@@ -21,6 +21,7 @@ from helmet_monitoring.core.config import CameraSettings, load_settings
 from helmet_monitoring.core.schemas import AlertCandidate, AlertRecord, CameraHeartbeat
 from helmet_monitoring.services.identity_resolver import build_identity_resolver
 from helmet_monitoring.services.person_directory import PersonDirectory
+from helmet_monitoring.services.runtime_profiles import local_smoke_settings
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import build_repository
 from helmet_monitoring.utils.image_io import read_image
@@ -36,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--person-id", default="person-001", help="Registry person ID whose sample image will be used.")
     parser.add_argument("--image", default="", help="Optional explicit image path. Defaults to the first image under artifacts/identity/faces/<person_id>.")
     parser.add_argument("--camera-id", default="", help="Optional enabled camera ID to attach to the test alert.")
+    parser.add_argument(
+        "--strict-runtime",
+        action="store_true",
+        help="Use the configured backend and storage instead of the local-only test profile.",
+    )
     return parser.parse_args()
 
 
@@ -118,7 +124,9 @@ def _overlay_snapshot(frame, event_no: str, person_name: str | None, image_name:
 def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
-    repository = build_repository(settings, require_requested_backend=True)
+    if not args.strict_runtime:
+        settings = local_smoke_settings(settings)
+    repository = build_repository(settings, require_requested_backend=args.strict_runtime)
     evidence_store = EvidenceStore(settings)
     identity_resolver = build_identity_resolver(settings)
     directory = PersonDirectory(settings)

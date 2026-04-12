@@ -131,7 +131,8 @@
       "zone_name": "Gate 1",
       "responsible_department": "Safety",
       "alert_emails": [],
-      "enabled": true
+      "enabled": true,
+      "default_person_id": "person-002"
     }
   ]
 }

@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -17,6 +18,7 @@ if str(SRC_ROOT) not in sys.path:
 from helmet_monitoring.core.config import CameraSettings, load_settings
 from helmet_monitoring.core.schemas import AlertRecord, utc_now
 from helmet_monitoring.services.notifier import NotificationService
+from helmet_monitoring.services.runtime_profiles import local_smoke_settings
 from helmet_monitoring.storage.repository import LocalAlertRepository, build_repository
 
 
@@ -28,6 +30,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recipient", action="append", default=[], help="Repeatable recipient override.")
     parser.add_argument("--camera-id", default=None, help="Optional camera_id override.")
     parser.add_argument("--require-success", action="store_true", help="Fail unless at least one SMTP notification is sent successfully.")
+    parser.add_argument(
+        "--local-runtime-dir",
+        default=None,
+        help="Optional local runtime dir override. Forces a local-only repository while keeping SMTP settings intact.",
+    )
     return parser.parse_args()
 
 
@@ -131,6 +138,20 @@ def _build_validation_alert(camera: CameraSettings) -> AlertRecord:
 
 
 def run_validation(settings, args: argparse.Namespace) -> dict[str, str | int]:
+    if args.local_runtime_dir:
+        local_settings = local_smoke_settings(settings)
+        local_runtime_dir = Path(args.local_runtime_dir).resolve()
+        local_snapshot_dir = local_runtime_dir.parent / "captures"
+        local_runtime_dir.mkdir(parents=True, exist_ok=True)
+        local_snapshot_dir.mkdir(parents=True, exist_ok=True)
+        settings = replace(
+            local_settings,
+            persistence=replace(
+                local_settings.persistence,
+                runtime_dir=str(local_runtime_dir),
+                snapshot_dir=str(local_snapshot_dir),
+            ),
+        )
     camera = _select_camera(settings, args.camera_id)
     mode = _resolve_mode(settings, args)
     repository = LocalAlertRepository(settings.resolve_path(settings.persistence.runtime_dir))

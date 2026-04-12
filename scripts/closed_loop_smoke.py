@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from helmet_monitoring.core.config import load_settings
 from helmet_monitoring.services.model_governance import build_feedback_dataset, export_feedback_cases
+from helmet_monitoring.services.runtime_profiles import local_smoke_settings
 from helmet_monitoring.services.workflow import AlertWorkflowService
 from helmet_monitoring.storage.repository import build_repository
 
@@ -26,6 +27,11 @@ def parse_args() -> argparse.Namespace:
         description="Run an end-to-end smoke: inject test alerts, close one operationally, route one into model feedback."
     )
     parser.add_argument("--config", default=None, help="Optional runtime config path.")
+    parser.add_argument(
+        "--strict-runtime",
+        action="store_true",
+        help="Use the configured backend and storage instead of the local-only test profile.",
+    )
     parser.add_argument("--person-id", default="person-001", help="Registered person used by scripts/trigger_test_alert.py.")
     parser.add_argument("--camera-id", default="", help="Optional camera id for the synthetic alerts.")
     parser.add_argument("--actor", default="ops.closed_loop_smoke", help="Workflow actor written to audit logs.")
@@ -50,6 +56,8 @@ def _trigger_test_alert(args: argparse.Namespace) -> dict[str, str]:
     command = [sys.executable, str(REPO_ROOT / "scripts" / "trigger_test_alert.py")]
     if args.config:
         command.extend(["--config", args.config])
+    if args.strict_runtime:
+        command.append("--strict-runtime")
     if args.person_id:
         command.extend(["--person-id", args.person_id])
     if args.camera_id:
@@ -71,7 +79,9 @@ def _find_alert_by_event_no(repository, event_no: str) -> dict:
 def main() -> None:
     args = parse_args()
     settings = load_settings(args.config)
-    repository = build_repository(settings)
+    if not args.strict_runtime:
+        settings = local_smoke_settings(settings)
+    repository = build_repository(settings, require_requested_backend=args.strict_runtime)
     workflow = AlertWorkflowService(repository, repo_root=REPO_ROOT)
 
     remediated_seed = _trigger_test_alert(args)

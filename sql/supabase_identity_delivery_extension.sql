@@ -1,0 +1,11 @@
+alter table public.persons add column if not exists aliases jsonb;
+alter table public.persons add column if not exists badge_keywords jsonb;
+alter table public.persons add column if not exists default_camera_ids jsonb;
+alter table public.persons add column if not exists default_camera_names jsonb;
+alter table public.persons add column if not exists default_locations jsonb;
+alter table public.persons add column if not exists default_site_names jsonb;
+alter table public.persons add column if not exists default_building_names jsonb;
+alter table public.persons add column if not exists default_floor_names jsonb;
+alter table public.persons add column if not exists default_workshop_names jsonb;
+alter table public.persons add column if not exists default_zone_names jsonb;
+alter table public.persons add column if not exists default_departments jsonb;

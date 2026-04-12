@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -19,6 +20,12 @@ from helmet_monitoring.utils.image_io import read_image
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Encode local face samples and sync them into Supabase person_face_profiles.")
+    parser.add_argument("--config", default="configs/runtime.json", help="Runtime config path.")
+    return parser.parse_args()
+
+
 def iter_face_images(face_root: Path):
     if not face_root.exists():
         return
@@ -31,7 +38,8 @@ def iter_face_images(face_root: Path):
 
 
 def main() -> None:
-    settings = load_settings("configs/runtime.json")
+    args = parse_args()
+    settings = load_settings(args.config)
     if not settings.supabase.is_configured:
         raise RuntimeError("Supabase credentials are not configured in .env")
 

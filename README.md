@@ -354,8 +354,9 @@ Run these SQL files in Supabase SQL Editor in order:
 
 1. `sql/supabase_phase1_schema.sql`
 2. `sql/supabase_identity_extension.sql`
-3. `sql/supabase_identity_ai_extension.sql`
-4. `sql/supabase_product_extension.sql`
+3. `sql/supabase_identity_delivery_extension.sql`
+4. `sql/supabase_identity_ai_extension.sql`
+5. `sql/supabase_product_extension.sql`
 
 Then verify:
 
@@ -420,13 +421,21 @@ Run notification-only validation:
 ```bash
 .venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode dry_run
 .venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --recipient your@email.com
+.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --local-runtime-dir %TEMP%\helmet_notify_check
 ```
 
 Audit identity coverage and default-person readiness:
 
 ```bash
+.venv\Scripts\python.exe scripts/enrich_identity_registry.py --write
 .venv\Scripts\python.exe scripts/identity_delivery_audit.py
 .venv\Scripts\python.exe scripts/bootstrap_identity_defaults.py
+```
+
+Validate Supabase Storage upload / signed URL / cleanup:
+
+```bash
+.venv\Scripts\python.exe scripts/validate_storage_delivery.py --require-success
 ```
 
 Run tests:
@@ -936,8 +945,9 @@ docker compose --profile edge up -d --build
 
 1. `sql/supabase_phase1_schema.sql`
 2. `sql/supabase_identity_extension.sql`
-3. `sql/supabase_identity_ai_extension.sql`
-4. `sql/supabase_product_extension.sql`
+3. `sql/supabase_identity_delivery_extension.sql`
+4. `sql/supabase_identity_ai_extension.sql`
+5. `sql/supabase_product_extension.sql`
 
 然后执行检查：
 

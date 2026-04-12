@@ -9,7 +9,15 @@
     "phone": "13857521261",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "hj"
+    ],
+    "badge_keywords": [
+      "E10001",
+      "10001",
+      "HJ"
+    ]
   },
   {
     "person_id": "person-002",
@@ -21,7 +29,18 @@
     "phone": "13899382808",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "hw"
+    ],
+    "badge_keywords": [
+      "E10002",
+      "10002",
+      "HW"
+    ],
+    "default_camera_ids": [
+      "cam-rtsp-001"
+    ]
   },
   {
     "person_id": "person-003",
@@ -33,7 +52,17 @@
     "phone": "13881945589",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wu Qiang",
+      "WQ"
+    ],
+    "badge_keywords": [
+      "E10003",
+      "10003",
+      "WUQIANG",
+      "WQ"
+    ]
   },
   {
     "person_id": "person-004",
@@ -45,7 +74,17 @@
     "phone": "13874148902",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Li Peng",
+      "LP"
+    ],
+    "badge_keywords": [
+      "E10004",
+      "10004",
+      "LIPENG",
+      "LP"
+    ]
   },
   {
     "person_id": "person-005",
@@ -57,7 +96,17 @@
     "phone": "13815820539",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhou Bo",
+      "ZB"
+    ],
+    "badge_keywords": [
+      "E10005",
+      "10005",
+      "ZHOUBO",
+      "ZB"
+    ]
   },
   {
     "person_id": "person-006",
@@ -69,7 +118,17 @@
     "phone": "13828409892",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Liu Jun",
+      "LJ"
+    ],
+    "badge_keywords": [
+      "E10006",
+      "10006",
+      "LIUJUN",
+      "LJ"
+    ]
   },
   {
     "person_id": "person-007",
@@ -81,7 +140,17 @@
     "phone": "13844922469",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhang Chao",
+      "ZC"
+    ],
+    "badge_keywords": [
+      "E10007",
+      "10007",
+      "ZHANGCHAO",
+      "ZC"
+    ]
   },
   {
     "person_id": "person-008",
@@ -93,7 +162,17 @@
     "phone": "13885214331",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhao Jun",
+      "ZJ"
+    ],
+    "badge_keywords": [
+      "E10008",
+      "10008",
+      "ZHAOJUN",
+      "ZJ"
+    ]
   },
   {
     "person_id": "person-009",
@@ -105,7 +184,17 @@
     "phone": "13838443346",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wang Jun",
+      "WJ"
+    ],
+    "badge_keywords": [
+      "E10009",
+      "10009",
+      "WANGJUN",
+      "WJ"
+    ]
   },
   {
     "person_id": "person-010",
@@ -117,7 +206,17 @@
     "phone": "13895090820",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhou Tao",
+      "ZT"
+    ],
+    "badge_keywords": [
+      "E10010",
+      "10010",
+      "ZHOUTAO",
+      "ZT"
+    ]
   },
   {
     "person_id": "person-011",
@@ -129,7 +228,17 @@
     "phone": "13891630078",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhang Wei",
+      "ZW"
+    ],
+    "badge_keywords": [
+      "E10011",
+      "10011",
+      "ZHANGWEI",
+      "ZW"
+    ]
   },
   {
     "person_id": "person-012",
@@ -141,7 +250,17 @@
     "phone": "13810822350",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wu Yu",
+      "WY"
+    ],
+    "badge_keywords": [
+      "E10012",
+      "10012",
+      "WUYU",
+      "WY"
+    ]
   },
   {
     "person_id": "person-013",
@@ -153,7 +272,17 @@
     "phone": "13855890738",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhao Jian",
+      "ZJ"
+    ],
+    "badge_keywords": [
+      "E10013",
+      "10013",
+      "ZHAOJIAN",
+      "ZJ"
+    ]
   },
   {
     "person_id": "person-014",
@@ -165,7 +294,17 @@
     "phone": "13887115376",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wu Gang",
+      "WG"
+    ],
+    "badge_keywords": [
+      "E10014",
+      "10014",
+      "WUGANG",
+      "WG"
+    ]
   },
   {
     "person_id": "person-015",
@@ -177,7 +316,17 @@
     "phone": "13873975869",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Huang Yan",
+      "HY"
+    ],
+    "badge_keywords": [
+      "E10015",
+      "10015",
+      "HUANGYAN",
+      "HY"
+    ]
   },
   {
     "person_id": "person-016",
@@ -189,7 +338,17 @@
     "phone": "13839305936",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Yang Lei",
+      "YL"
+    ],
+    "badge_keywords": [
+      "E10016",
+      "10016",
+      "YANGLEI",
+      "YL"
+    ]
   },
   {
     "person_id": "person-017",
@@ -201,7 +360,17 @@
     "phone": "13877074859",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Yang Lei",
+      "YL"
+    ],
+    "badge_keywords": [
+      "E10017",
+      "10017",
+      "YANGLEI",
+      "YL"
+    ]
   },
   {
     "person_id": "person-018",
@@ -213,7 +382,17 @@
     "phone": "13821344559",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Yang Na",
+      "YN"
+    ],
+    "badge_keywords": [
+      "E10018",
+      "10018",
+      "YANGNA",
+      "YN"
+    ]
   },
   {
     "person_id": "person-019",
@@ -225,7 +404,17 @@
     "phone": "13861110446",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Huang Jun",
+      "HJ"
+    ],
+    "badge_keywords": [
+      "E10019",
+      "10019",
+      "HUANGJUN",
+      "HJ"
+    ]
   },
   {
     "person_id": "person-020",
@@ -237,7 +426,17 @@
     "phone": "13822336553",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Liu Lin",
+      "LL"
+    ],
+    "badge_keywords": [
+      "E10020",
+      "10020",
+      "LIULIN",
+      "LL"
+    ]
   },
   {
     "person_id": "person-021",
@@ -249,7 +448,17 @@
     "phone": "13813176737",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wu Jian",
+      "WJ"
+    ],
+    "badge_keywords": [
+      "E10021",
+      "10021",
+      "WUJIAN",
+      "WJ"
+    ]
   },
   {
     "person_id": "person-022",
@@ -261,7 +470,17 @@
     "phone": "13855326275",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Chen Jun",
+      "CJ"
+    ],
+    "badge_keywords": [
+      "E10022",
+      "10022",
+      "CHENJUN",
+      "CJ"
+    ]
   },
   {
     "person_id": "person-023",
@@ -273,7 +492,17 @@
     "phone": "13862139722",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhao Yan",
+      "ZY"
+    ],
+    "badge_keywords": [
+      "E10023",
+      "10023",
+      "ZHAOYAN",
+      "ZY"
+    ]
   },
   {
     "person_id": "person-024",
@@ -285,7 +514,17 @@
     "phone": "13825050204",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Liu Yan",
+      "LY"
+    ],
+    "badge_keywords": [
+      "E10024",
+      "10024",
+      "LIUYAN",
+      "LY"
+    ]
   },
   {
     "person_id": "person-025",
@@ -297,7 +536,17 @@
     "phone": "13875767901",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wang Tao",
+      "WT"
+    ],
+    "badge_keywords": [
+      "E10025",
+      "10025",
+      "WANGTAO",
+      "WT"
+    ]
   },
   {
     "person_id": "person-026",
@@ -309,7 +558,17 @@
     "phone": "13888565167",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Li Peng",
+      "LP"
+    ],
+    "badge_keywords": [
+      "E10026",
+      "10026",
+      "LIPENG",
+      "LP"
+    ]
   },
   {
     "person_id": "person-027",
@@ -321,7 +580,17 @@
     "phone": "13890617779",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Chen Xin",
+      "CX"
+    ],
+    "badge_keywords": [
+      "E10027",
+      "10027",
+      "CHENXIN",
+      "CX"
+    ]
   },
   {
     "person_id": "person-028",
@@ -333,7 +602,17 @@
     "phone": "13898124759",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Wu Gang",
+      "WG"
+    ],
+    "badge_keywords": [
+      "E10028",
+      "10028",
+      "WUGANG",
+      "WG"
+    ]
   },
   {
     "person_id": "person-029",
@@ -345,7 +624,17 @@
     "phone": "13888267731",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Zhou Wei",
+      "ZW"
+    ],
+    "badge_keywords": [
+      "E10029",
+      "10029",
+      "ZHOUWEI",
+      "ZW"
+    ]
   },
   {
     "person_id": "person-030",
@@ -357,6 +646,16 @@
     "phone": "13857927413",
     "face_photo_url": null,
     "badge_photo_url": null,
-    "status": "active"
+    "status": "active",
+    "aliases": [
+      "Li Wei",
+      "LW"
+    ],
+    "badge_keywords": [
+      "E10030",
+      "10030",
+      "LIWEI",
+      "LW"
+    ]
   }
 ]

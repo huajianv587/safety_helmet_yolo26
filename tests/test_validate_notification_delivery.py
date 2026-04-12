@@ -78,6 +78,7 @@ class ValidateNotificationDeliveryTest(unittest.TestCase):
                 recipient=["ops@example.com"],
                 camera_id=None,
                 require_success=False,
+                local_runtime_dir=None,
             )
 
             result = validate_notification_delivery.run_validation(settings, args)
@@ -85,6 +86,23 @@ class ValidateNotificationDeliveryTest(unittest.TestCase):
         self.assertEqual(result["notification_mode"], "dry_run")
         self.assertEqual(result["notifications"], 1)
         self.assertIn("dry_run", str(result["notification_statuses"]))
+
+    def test_local_runtime_dir_forces_local_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = build_settings(root)
+            args = Namespace(
+                strict_runtime=False,
+                mode="dry_run",
+                recipient=["ops@example.com"],
+                camera_id=None,
+                require_success=False,
+                local_runtime_dir=str(root / "isolated_runtime"),
+            )
+
+            result = validate_notification_delivery.run_validation(settings, args)
+
+        self.assertEqual(result["backend"], "local")
 
 
 if __name__ == "__main__":

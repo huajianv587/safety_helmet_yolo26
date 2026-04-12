@@ -254,6 +254,8 @@ PAGE_META_RUNTIME_I18N = {
     },
 }
 
+_ALT_THEME_REGISTERED = False
+
 
 def _start_of_day() -> datetime:
     now = datetime.now(tz=UTC)
@@ -1396,11 +1398,22 @@ def _build_chart_theme() -> alt.ThemeConfig:
 
 
 def _inject_theme() -> None:
-    try:
-        alt.themes.register("safety_helmet_console", _build_chart_theme)
-    except ValueError:
-        pass
-    alt.themes.enable("safety_helmet_console")
+    global _ALT_THEME_REGISTERED
+
+    if hasattr(alt, "theme") and hasattr(alt.theme, "register") and hasattr(alt.theme, "enable"):
+        if not _ALT_THEME_REGISTERED:
+            @alt.theme.register("safety_helmet_console", enable=False)
+            def _registered_safety_helmet_theme():
+                return _build_chart_theme()
+
+            _ALT_THEME_REGISTERED = True
+        alt.theme.enable("safety_helmet_console")
+    else:
+        try:
+            alt.themes.register("safety_helmet_console", _build_chart_theme)
+        except ValueError:
+            pass
+        alt.themes.enable("safety_helmet_console")
     st.markdown(
         """
         <style>

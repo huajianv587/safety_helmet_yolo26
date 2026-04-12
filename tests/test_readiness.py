@@ -112,6 +112,50 @@ class ReadinessTest(unittest.TestCase):
             self.assertIn("storage_privacy", checks)
             self.assertEqual(checks["storage_privacy"]["status"], "warn")
 
+    def test_collect_readiness_report_warns_when_identity_delivery_extension_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = build_settings(root)
+            settings = replace(
+                settings,
+                repository_backend="supabase",
+                supabase=SupabaseSettings(url="https://example.supabase.co", service_role_key="service-role"),
+            )
+            ensure_workspace_scaffold(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False), patch(
+                "helmet_monitoring.services.readiness._identity_delivery_extension_ready",
+                return_value=False,
+            ):
+                report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertIn("identity_delivery_extension", checks)
+            self.assertEqual(checks["identity_delivery_extension"]["status"], "warn")
+            self.assertTrue(
+                any("supabase_identity_delivery_extension.sql" in item for item in report["next_actions"])
+            )
+
+    def test_collect_readiness_report_warns_when_supabase_identity_delivery_columns_are_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = build_settings(root)
+            settings = replace(
+                settings,
+                repository_backend="supabase",
+                supabase=SupabaseSettings(url="https://example.supabase.co", service_role_key="service-role"),
+            )
+            ensure_workspace_scaffold(settings, repo_root=root)
+            with patch.dict("os.environ", isolated_auth_env(root), clear=False), patch(
+                "helmet_monitoring.services.readiness._identity_delivery_extension_ready",
+                return_value=False,
+            ):
+                report = collect_readiness_report(settings, repo_root=root)
+            checks = {item["name"]: item for item in report["checks"]}
+            self.assertIn("identity_delivery_extension", checks)
+            self.assertEqual(checks["identity_delivery_extension"]["status"], "warn")
+            self.assertTrue(
+                any("supabase_identity_delivery_extension.sql" in item for item in report["next_actions"])
+            )
+
     def test_collect_readiness_report_requires_trusted_console_auth(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
