@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -38,7 +39,7 @@ from helmet_monitoring.core.config import (
     TrackingSettings,
 )
 from helmet_monitoring.core.schemas import DetectionRecord
-from helmet_monitoring.ui.live_preview_stream import start_live_preview_server
+from helmet_monitoring.ui.live_preview_stream import _browser_camera_page, start_live_preview_server
 
 
 def build_settings() -> AppSettings:
@@ -76,6 +77,51 @@ def build_settings() -> AppSettings:
 
 
 class LivePreviewStreamTest(unittest.TestCase):
+    def test_browser_camera_page_applies_preview_env_overrides(self) -> None:
+        overrides = {
+            "HELMET_BROWSER_PREVIEW_INTERVAL_MS": "260",
+            "HELMET_BROWSER_PREVIEW_OVERLAY_HOLD_MS": "1400",
+            "HELMET_BROWSER_PREVIEW_INFER_WIDTH": "720",
+            "HELMET_BROWSER_PREVIEW_CAMERA_WIDTH": "1280",
+            "HELMET_BROWSER_PREVIEW_CAMERA_HEIGHT": "720",
+            "HELMET_BROWSER_PREVIEW_CAMERA_FPS": "30",
+            "HELMET_BROWSER_PREVIEW_JPEG_QUALITY": "0.8",
+        }
+        with patch.dict(os.environ, overrides, clear=False):
+            html = _browser_camera_page("cam-local-001")
+
+        self.assertIn("const detectIntervalMs = 260;", html)
+        self.assertIn("const overlayHoldMs = 1400;", html)
+        self.assertIn("const maxInferWidth = 720;", html)
+        self.assertIn("const cameraWidth = 1280;", html)
+        self.assertIn("const cameraHeight = 720;", html)
+        self.assertIn("const cameraFps = 30;", html)
+        self.assertIn("const jpegQuality = 0.8;", html)
+        self.assertIn("const maxAdaptiveDelayMs = Math.max(360, detectIntervalMs * 3);", html)
+        self.assertIn("document.hidden", html)
+        self.assertIn("scheduleInference(nextDelay);", html)
+
+    def test_browser_camera_page_clamps_invalid_preview_env_values(self) -> None:
+        overrides = {
+            "HELMET_BROWSER_PREVIEW_INTERVAL_MS": "10",
+            "HELMET_BROWSER_PREVIEW_OVERLAY_HOLD_MS": "99999",
+            "HELMET_BROWSER_PREVIEW_INFER_WIDTH": "abc",
+            "HELMET_BROWSER_PREVIEW_CAMERA_WIDTH": "10000",
+            "HELMET_BROWSER_PREVIEW_CAMERA_HEIGHT": "1",
+            "HELMET_BROWSER_PREVIEW_CAMERA_FPS": "-2",
+            "HELMET_BROWSER_PREVIEW_JPEG_QUALITY": "5",
+        }
+        with patch.dict(os.environ, overrides, clear=False):
+            html = _browser_camera_page("cam-local-001")
+
+        self.assertIn("const detectIntervalMs = 80;", html)
+        self.assertIn("const overlayHoldMs = 5000;", html)
+        self.assertIn("const maxInferWidth = 512;", html)
+        self.assertIn("const cameraWidth = 1920;", html)
+        self.assertIn("const cameraHeight = 240;", html)
+        self.assertIn("const cameraFps = 8;", html)
+        self.assertIn("const jpegQuality = 0.92;", html)
+
     def test_app_cached_preview_server_supports_legacy_signature(self) -> None:
         cached_impl = getattr(app._cached_live_preview_server, "__wrapped__", app._cached_live_preview_server)
 

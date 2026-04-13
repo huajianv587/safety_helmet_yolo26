@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -27,6 +28,28 @@ class LivePreviewServerHandle:
     port: int
     thread: threading.Thread
     server: ThreadingHTTPServer
+
+
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = str(os.getenv(name, "")).strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _env_float(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    raw = str(os.getenv(name, "")).strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
 
 
 class BrowserInferenceEngine:
@@ -93,6 +116,13 @@ def _camera_frame_path(live_frames_dir: Path, camera_id: str) -> Path:
 
 def _browser_camera_page(camera_id: str) -> str:
     safe_camera_id = json.dumps(camera_id)
+    detect_interval_ms = _env_int("HELMET_BROWSER_PREVIEW_INTERVAL_MS", 180, minimum=80, maximum=1000)
+    overlay_hold_ms = _env_int("HELMET_BROWSER_PREVIEW_OVERLAY_HOLD_MS", 900, minimum=250, maximum=5000)
+    max_infer_width = _env_int("HELMET_BROWSER_PREVIEW_INFER_WIDTH", 512, minimum=256, maximum=960)
+    camera_width = _env_int("HELMET_BROWSER_PREVIEW_CAMERA_WIDTH", 960, minimum=320, maximum=1920)
+    camera_height = _env_int("HELMET_BROWSER_PREVIEW_CAMERA_HEIGHT", 540, minimum=240, maximum=1080)
+    camera_fps = _env_int("HELMET_BROWSER_PREVIEW_CAMERA_FPS", 24, minimum=8, maximum=60)
+    jpeg_quality = _env_float("HELMET_BROWSER_PREVIEW_JPEG_QUALITY", 0.68, minimum=0.3, maximum=0.92)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -155,21 +185,27 @@ def _browser_camera_page(camera_id: str) -> str:
     (() => {{
       const cameraId = {safe_camera_id};
       const detectPath = `/infer/${{encodeURIComponent(cameraId)}}`;
-      const detectIntervalMs = 120;
-      const overlayHoldMs = 700;
-      const maxInferWidth = 640;
+      const detectIntervalMs = {detect_interval_ms};
+      const overlayHoldMs = {overlay_hold_ms};
+      const maxInferWidth = {max_infer_width};
+      const cameraWidth = {camera_width};
+      const cameraHeight = {camera_height};
+      const cameraFps = {camera_fps};
+      const jpegQuality = {jpeg_quality};
+      const maxAdaptiveDelayMs = Math.max(360, detectIntervalMs * 3);
       const statusEl = document.getElementById("camera-status");
       const videoEl = document.getElementById("camera-video");
       const overlayEl = document.getElementById("camera-overlay");
-      const overlayCtx = overlayEl.getContext("2d");
+      const overlayCtx = overlayEl.getContext("2d", {{ alpha: true, desynchronized: true }});
       const captureCanvas = document.createElement("canvas");
-      const captureCtx = captureCanvas.getContext("2d");
+      const captureCtx = captureCanvas.getContext("2d", {{ alpha: false, desynchronized: true }});
       let latestDetections = [];
       let latestFrameWidth = 0;
       let latestFrameHeight = 0;
       let latestInferMs = 0;
       let latestDetectionAt = 0;
       let inflight = false;
+      let inferTimer = 0;
 
       const showStatus = (message) => {{
         statusEl.textContent = message;
@@ -217,11 +253,26 @@ def _browser_camera_page(camera_id: str) -> str:
         requestAnimationFrame(drawOverlay);
       }};
 
+      const scheduleInference = (delayMs) => {{
+        if (inferTimer) {{
+          window.clearTimeout(inferTimer);
+        }}
+        inferTimer = window.setTimeout(runInference, Math.max(0, Math.round(delayMs)));
+      }};
+
       const runInference = () => {{
-        if (inflight || videoEl.readyState < 2 || !videoEl.videoWidth || !videoEl.videoHeight) {{
+        if (
+          inflight ||
+          document.hidden ||
+          videoEl.readyState < 2 ||
+          !videoEl.videoWidth ||
+          !videoEl.videoHeight
+        ) {{
+          scheduleInference(detectIntervalMs);
           return;
         }}
         inflight = true;
+        const roundtripStartedAt = performance.now();
 
         let inferWidth = videoEl.videoWidth;
         let inferHeight = videoEl.videoHeight;
@@ -236,6 +287,7 @@ def _browser_camera_page(camera_id: str) -> str:
         captureCanvas.toBlob(async (blob) => {{
           if (!blob) {{
             inflight = false;
+            scheduleInference(detectIntervalMs);
             return;
           }}
           try {{
@@ -258,8 +310,14 @@ def _browser_camera_page(camera_id: str) -> str:
             showStatus("Detection is warming up or temporarily unavailable.");
           }} finally {{
             inflight = false;
+            const roundtripMs = performance.now() - roundtripStartedAt;
+            const nextDelay = Math.max(
+              detectIntervalMs,
+              Math.min(maxAdaptiveDelayMs, Math.round(roundtripMs * 1.12))
+            );
+            scheduleInference(nextDelay);
           }}
-        }}, "image/jpeg", 0.72);
+        }}, "image/jpeg", jpegQuality);
       }};
 
       const start = async () => {{
@@ -273,8 +331,9 @@ def _browser_camera_page(camera_id: str) -> str:
             stream = await navigator.mediaDevices.getUserMedia({{
               video: {{
                 facingMode: {{ ideal: "environment" }},
-                width: {{ ideal: 1280 }},
-                height: {{ ideal: 720 }},
+                width: {{ ideal: cameraWidth }},
+                height: {{ ideal: cameraHeight }},
+                frameRate: {{ ideal: cameraFps, max: cameraFps }},
               }},
               audio: false,
             }});
@@ -284,7 +343,7 @@ def _browser_camera_page(camera_id: str) -> str:
           videoEl.srcObject = stream;
           await videoEl.play();
           hideStatus();
-          window.setInterval(runInference, detectIntervalMs);
+          scheduleInference(detectIntervalMs);
           requestAnimationFrame(drawOverlay);
         }} catch (_error) {{
           showStatus("Camera permission was denied or the browser could not open the camera.");
