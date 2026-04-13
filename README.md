@@ -232,6 +232,37 @@ Strict deployment inspection:
 .venv\Scripts\python.exe scripts\doctor.py --deploy-strict
 ```
 
+#### Fresh Windows Machine Checklist
+
+If you want a new Windows machine to behave almost the same as the current host setup, use this order:
+
+```bash
+git clone <repo-url>
+cd safety_helmet_yolo26
+
+# copy the same .env file into the repository root
+
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.identity.txt
+.venv\Scripts\python.exe scripts\bootstrap_workspace.py --copy-registry-example
+.venv\Scripts\python.exe scripts\doctor.py --ensure-scaffold
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
+```
+
+Then run:
+
+```bash
+start_host_services.cmd
+```
+
+Notes:
+
+- `models/best.pt` is tracked in the repository, so you do not need to copy the model separately.
+- If you reuse the same `.env`, the new machine can continue using the same Supabase project and service credentials.
+- Keep `camera_use_laptop_camera=true` in `.env` if the new machine should use its own webcam.
+- The new machine still needs Python installed, a usable camera, and camera permission at the OS level.
+
 ### 10. Environment Variables
 
 Create `.env` from `configs/supabase.example.env` and fill in the required values.
@@ -871,6 +902,37 @@ python -m venv .venv
 ```bash
 .venv\Scripts\python.exe scripts\doctor.py --deploy-strict
 ```
+
+#### 新电脑迁移清单
+
+如果你想让一台新的 Windows 电脑尽量复现当前这台机器的主机模式效果，建议按下面顺序执行：
+
+```bash
+git clone <仓库地址>
+cd safety_helmet_yolo26
+
+# 把同一份 .env 复制到仓库根目录
+
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.identity.txt
+.venv\Scripts\python.exe scripts\bootstrap_workspace.py --copy-registry-example
+.venv\Scripts\python.exe scripts\doctor.py --ensure-scaffold
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
+```
+
+然后执行：
+
+```bash
+start_host_services.cmd
+```
+
+说明：
+
+- `models/best.pt` 已经纳入仓库，不需要再单独拷贝模型。
+- 如果你复制的是同一份 `.env`，新机器就可以继续连接同一个 Supabase 项目和同一组服务凭据。
+- 如果新机器要使用它自己的本机摄像头，请在 `.env` 里保留 `camera_use_laptop_camera=true`。
+- 新机器仍然需要本机已安装 Python、有可用摄像头，并且系统层面允许摄像头访问。
 
 ### 10. 环境变量
 
