@@ -1,7 +1,7 @@
 {
   "repository_backend": "supabase",
   "model": {
-    "path": "artifacts/training_runs/helmet_project/yolo26n_cpu_v2_voxel_ft/weights/best.pt",
+    "path": "models/best.pt",
     "confidence": 0.45,
     "imgsz": 320,
     "device": "cpu",

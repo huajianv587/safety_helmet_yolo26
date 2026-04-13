@@ -199,6 +199,8 @@ safety_helmet_yolo26/
 
 The repository currently uses Python 3.11 in local CI and in the provided Dockerfile.
 
+The repository now includes a tracked default checkpoint at `models/best.pt`, so a fresh machine does not need a separate manual model copy.
+
 ### 8. Installation
 
 Create a virtual environment:
@@ -836,6 +838,8 @@ safety_helmet_yolo26/
 - 兼容：Python `3.10`
 
 当前仓库本地和 Dockerfile 默认都使用 Python 3.11。
+
+仓库现在已经自带一个可跟踪的默认模型 `models/best.pt`，新电脑不需要再额外手动拷贝模型文件。
 
 ### 8. 安装方式
 

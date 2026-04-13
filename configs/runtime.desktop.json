@@ -1,7 +1,7 @@
 {
   "repository_backend": "supabase",
   "model": {
-    "path": "artifacts/training_runs/helmet_project/cpu_test3/weights/best.pt",
+    "path": "models/best.pt",
     "confidence": 0.45,
     "imgsz": 640,
     "device": "cpu",
