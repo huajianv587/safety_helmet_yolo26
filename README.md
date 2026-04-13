@@ -1,109 +1,207 @@
-# Safety Helmet Detection System
+# Safety Helmet Monitoring System
 
 ## English Version
 
-### Overview
+### 1. What This Project Is
 
-This repository is a product-style safety helmet detection system built around a YOLO-based detector, a monitoring worker, and an operations console.
+This repository is a product-style safety helmet monitoring system built around:
 
-It supports:
+- a YOLO-based detection pipeline
+- a continuous monitoring worker
+- a Streamlit operations console
+- Supabase-backed alert storage and workflow management
+- optional identity resolution with badge OCR, face recognition, and LLM fallback
 
-- Local webcam monitoring
-- Browser-based live camera preview with real-time red/green boxes
-- Desktop real-time viewer with smoother local rendering
-- RTSP / HTTP / RTMP stream monitoring
-- Streamlit operations dashboard
-- Supabase-backed alert storage and review workflow
-- Optional OCR and face-recognition extensions
-- Hard-case collection for later model improvement
+This is not just a model demo. It is a full workflow system for:
 
-In the current implementation:
+- detecting no-helmet violations
+- generating alerts with snapshots and clips
+- resolving worker identity
+- notifying responsible people
+- reviewing and closing cases
+- collecting hard cases for future model improvement
+- operating the system with health checks, backups, release snapshots, and service supervision
 
-- Green box = helmet detected
-- Red box = no helmet detected / violation
+Current visual convention:
 
-### What Is In This Repository
+- green box = safe / helmet detected
+- red box = violation / no helmet detected
 
-The project contains three major runtime paths:
+### 2. Runtime Modes
 
-1. Browser camera preview for the local webcam
-   This is the recommended path when you want a smoother local live view in the browser.
+The project supports three main runtime paths:
 
-2. Desktop real-time viewer for the local webcam
-   This is useful when you want an even more direct local preview window without going through the web dashboard.
+1. Browser-based local webcam preview
+   Recommended when you want a smooth local demo without opening the full dashboard first.
 
-3. Docker-based stream monitoring
-   This is intended for RTSP / HTTP / RTMP inputs such as phone-published streams or industrial cameras.
+2. Desktop real-time viewer
+   Recommended when you want a native local preview window based on Tkinter + OpenCV.
 
-### Main Components
+3. Managed dashboard + monitor services
+   Recommended for regular host-based usage on Windows.
+
+Docker is supported, but it is optional. If you are not preparing Docker deployment right now, you can ignore the Docker-related sections and use the host-based scripts only.
+
+### 3. Main Components
 
 - `app.py`
-  Streamlit operations console.
+  Main Streamlit product console.
 
-- `src/helmet_monitoring/services/detector.py`
-  Helmet detection pipeline wrapper.
+- `src/helmet_monitoring/core/config.py`
+  Central configuration loader. Merges `.env` and `configs/runtime*.json` into one `AppSettings` object.
 
 - `src/helmet_monitoring/services/monitor.py`
-  Continuous monitoring worker used for stream-style inputs.
+  Main backend orchestrator. Reads camera frames, runs detection, applies governance, resolves identity, writes evidence, creates alerts, and sends notifications.
+
+- `src/helmet_monitoring/services/detector.py`
+  Ultralytics YOLO wrapper for detection and optional tracking.
+
+- `src/helmet_monitoring/services/event_engine.py`
+  Converts frame-level detections into event-level alerts.
+
+- `src/helmet_monitoring/services/identity_resolver.py`
+  Cascades badge OCR, face recognition, LLM fallback, and camera default identity rules.
+
+- `src/helmet_monitoring/storage/repository.py`
+  Storage abstraction with Supabase-first behavior and local JSON/JSONL fallback.
+
+- `src/helmet_monitoring/storage/evidence_store.py`
+  Saves snapshots and clips locally and optionally uploads them to Supabase Storage.
 
 - `src/helmet_monitoring/ui/live_preview_stream.py`
-  Lightweight preview server that exposes:
+  Lightweight preview server exposing:
   - `/health`
-  - `/browser/<camera_id>` for browser camera preview
-  - `/infer/<camera_id>` for browser-frame inference
-  - `/mjpeg/<camera_id>` for MJPEG live preview
+  - `/browser/<camera_id>`
+  - `/infer/<camera_id>`
+  - `/mjpeg/<camera_id>`
 
-- `scripts/browser_camera_preview.py`
-  Starts the lightweight browser preview service and opens the browser automatically.
+### 4. Architecture Overview
 
-- `scripts/realtime_camera_viewer.py`
-  Starts a local desktop viewer using Tkinter + OpenCV with live red/green boxes.
+High-level processing flow:
 
-- `scripts/run_monitor.py`
-  Starts the monitoring worker.
+1. `load_settings()` loads runtime configuration.
+2. `CameraStream` opens webcam or remote stream sources.
+3. `HelmetDetector` runs YOLO inference.
+4. `ViolationEventEngine` groups repeated violation detections into alert candidates.
+5. `FalsePositiveGovernance` filters small targets, ignore zones, whitelist cameras, and low-confidence/night cases.
+6. `IdentityResolver` tries badge OCR, face recognition, LLM fallback, and camera-default person binding.
+7. `EvidenceStore` writes snapshots and clips.
+8. `AlertRepository` persists alerts, actions, notifications, hard cases, and audit logs.
+9. `NotificationService` sends or simulates email notifications.
+10. `AlertWorkflowService` handles assignment, remediation, false-positive closure, and hard-case sinking.
 
-- `docker-compose.yml`
-  Docker stack for the dashboard, RTMP gateway, and monitoring worker.
-
-### Repository Layout
+### 5. Repository Layout
 
 ```text
 safety_helmet_yolo26/
-├─ app.py                             # Streamlit operations console entry
-├─ docker-compose.yml                 # Dashboard + monitor + RTMP relay stack
+├─ app.py
+├─ Dockerfile
+├─ docker-compose.yml
+├─ requirements.txt
+├─ requirements.identity.txt
+├─ requirements.dev.txt
 ├─ configs/
-│  ├─ runtime.json                    # Active runtime configuration
-│  └─ runtime.example.json            # Runtime configuration template
-├─ scripts/
-│  ├─ start_desktop_webcam.cmd        # Browser local-webcam demo launcher
-│  ├─ start_realtime_webcam.cmd       # Desktop real-time viewer launcher
-│  ├─ start_stream_docker.cmd         # Docker stream-mode launcher
-│  ├─ start_dashboard_service.cmd     # Managed dashboard service launcher
-│  ├─ start_monitor_service.cmd       # Managed monitor service launcher
-│  ├─ start_host_services.cmd         # Launch both managed services
-│  ├─ doctor.py                       # Environment and dependency diagnostics
-│  ├─ check_supabase.py               # Supabase readiness checker
-│  ├─ smoke_product.py                # End-to-end smoke tests
-│  ├─ validate_notification_delivery.py # Independent notification delivery validation
-│  ├─ bootstrap_identity_defaults.py  # Suggest/apply default people for cameras
-│  ├─ identity_delivery_audit.py      # Identity data coverage audit
-│  ├─ dashboard_healthcheck.py        # Dashboard health probe
-│  ├─ monitor_healthcheck.py          # Monitor worker health probe
-│  └─ install_windows_autostart.ps1   # Install Windows scheduled-task auto-start
+│  ├─ runtime.json
+│  ├─ runtime.example.json
+│  ├─ runtime.desktop.json
+│  ├─ runtime.quicktest.json
+│  ├─ person_registry.json
+│  ├─ person_registry.example.json
+│  ├─ supabase.example.env
+│  └─ datasets/
+├─ deploy/
+│  └─ caddy/
+├─ sql/
 ├─ src/
-│  └─ helmet_monitoring/              # Core package (detection + monitoring + UI services)
-├─ sql/                               # Supabase schema and extension scripts
-├─ tests/                             # Automated tests
-├─ artifacts/                         # Runtime outputs (captures, alerts, training, backups)
-└─ docs/                              # Productization and operations references
+│  └─ helmet_monitoring/
+│     ├─ core/
+│     ├─ services/
+│     ├─ storage/
+│     ├─ ui/
+│     └─ utils/
+├─ scripts/
+├─ tests/
+├─ data/
+├─ artifacts/
+├─ docs/
+└─ legacy/
 ```
 
-### Supported Runtime
+#### Key folders
 
-- Recommended Python: `3.11`
-- Supported fallback Python: `3.10`
+- `configs/`
+  Runtime config, person registry, dataset YAML, env template.
 
-Create the environment:
+- `deploy/`
+  Reverse proxy configuration for the optional edge deployment path.
+
+- `sql/`
+  Supabase schema and extension scripts.
+
+- `src/helmet_monitoring/`
+  Real application code.
+
+- `scripts/`
+  Operational helpers, smoke tests, health checks, training tools, release tools, startup wrappers.
+
+- `tests/`
+  Pytest suite covering config, monitoring, workflow, governance, repository, preview, and operations modules.
+
+- `data/`
+  Local dataset and hard-case feedback assets.
+
+- `artifacts/`
+  Runtime outputs, captures, clips, models, releases, backups, exports, service logs, and training runs.
+
+### 6. Tech Stack
+
+#### Vision and ML
+
+- Ultralytics YOLO
+- OpenCV
+- NumPy
+- Pillow
+
+#### UI and analytics
+
+- Streamlit
+- Altair
+- Pandas
+
+#### Identity stack
+
+- PaddleOCR
+- RapidOCR
+- facenet-pytorch
+- torch
+
+#### Platform and integration
+
+- Supabase Database
+- Supabase Storage
+- httpx
+- python-dotenv
+- smtplib
+
+#### Operations and deployment
+
+- Docker
+- docker-compose
+- Caddy
+- nginx-rtmp
+- pytest
+- GitHub Actions
+
+### 7. Supported Python Version
+
+- recommended: Python `3.11`
+- supported fallback: Python `3.10`
+
+The repository currently uses Python 3.11 in local CI and in the provided Dockerfile.
+
+### 8. Installation
+
+Create a virtual environment:
 
 ```bash
 python -m venv .venv
@@ -112,72 +210,88 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.dev.txt
 ```
 
-### Initial Setup
+### 9. First-Time Setup
 
 Bootstrap the workspace:
 
 ```bash
-.venv\Scripts\python.exe scripts/bootstrap_workspace.py --copy-env-example --copy-registry-example
+.venv\Scripts\python.exe scripts\bootstrap_workspace.py --copy-env-example --copy-registry-example
 ```
 
-Run a readiness inspection:
+Run readiness inspection:
 
 ```bash
-.venv\Scripts\python.exe scripts/doctor.py --ensure-scaffold
+.venv\Scripts\python.exe scripts\doctor.py --ensure-scaffold
 ```
 
-Optional strict deployment inspection:
+Strict deployment inspection:
 
 ```bash
-.venv\Scripts\python.exe scripts/doctor.py --deploy-strict
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
 ```
 
-### Environment Configuration
+### 10. Environment Variables
 
-Create `.env` from `configs/supabase.example.env` and then fill in your real values.
+Create `.env` from `configs/supabase.example.env` and fill in the required values.
 
-Important variables:
+Important keys:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`
+- `HELMET_STORAGE_BACKEND`
 - `HELMET_CONFIG_PATH`
-- `HELMET_PUBLISH_URL`
 - `HELMET_MONITOR_STREAM_URL`
-- `camera_use_laptop_camera=true`
+- `HELMET_PUBLISH_URL`
 - `HELMET_LIVE_PREVIEW_PORT`
-- `OPENAI_API_KEY`
-- `DEEPSEEK_API_KEY`
+- `camera_use_laptop_camera=true`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
+- `SMTP_USE_TLS`
 - `ALERT_EMAIL_RECIPIENTS`
-- `HELMET_AUTH_USERS_FILE`
+- `OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
 - `HELMET_AUTH_ADMIN_USERNAME`
 - `HELMET_AUTH_ADMIN_PASSWORD_HASH`
+- `HELMET_AUTH_ADMIN_DISPLAY_NAME`
+- `HELMET_AUTH_ADMIN_ROLE`
 
 Notes:
 
-- `camera_use_laptop_camera=true` forces local-webcam demo behavior during settings loading.
-- `HELMET_LIVE_PREVIEW_PORT` defaults to `8876`.
-- Do not commit real secrets to version control.
-- If any keys were exposed during development, rotate them before production use.
+- `camera_use_laptop_camera=true` forces local-camera demo selection during settings loading.
+- If you want RTSP/RTMP/HTTP remote stream monitoring, turn that flag off and configure remote stream sources instead.
+- Do not commit real secrets.
 
-### Runtime Configuration
+### 11. Runtime Configuration
 
-The main runtime file is `configs/runtime.json`.
+Main file:
+
+```text
+configs/runtime.json
+```
 
 Important sections:
 
+- `repository_backend`
+  Usually `supabase` or `local`.
+
 - `model`
-  - `path`: model path
-  - `confidence`: detection threshold
-  - `imgsz`: inference image size
-  - `device`: inference device such as `cpu`
-  - `safe_labels`: labels treated as safe
-  - `violation_labels`: labels treated as violations
+  - `path`
+  - `confidence`
+  - `imgsz`
+  - `device`
+  - `violation_labels`
+  - `safe_labels`
+
+- `event_rules`
+  - `alert_frames`
+  - `dedupe_seconds`
+  - `match_distance_pixels`
+  - `max_track_age_seconds`
+  - `min_confidence_for_alert`
 
 - `monitoring`
   - `frame_stride`
@@ -186,27 +300,131 @@ Important sections:
   - `heartbeat_interval_seconds`
   - `max_frames`
 
+- `identity`
+  - `provider`
+  - `registry_path`
+  - `refresh_seconds`
+
+- `face_recognition`
+  - `enabled`
+  - `provider`
+  - `device`
+  - `similarity_threshold`
+  - `review_threshold`
+  - `face_profile_dir`
+
+- `ocr`
+  - `enabled`
+  - `provider`
+  - `min_confidence`
+
+- `llm_fallback`
+  - `enabled`
+  - `use_openai`
+  - `use_deepseek`
+  - `openai_model`
+  - `deepseek_model`
+
+- `governance`
+  - `enabled`
+  - `min_bbox_area`
+  - `ignore_zones`
+  - `whitelist_camera_ids`
+  - `night_confidence_boost`
+  - `review_confidence_margin`
+
+- `clip`
+  - `enabled`
+  - `pre_seconds`
+  - `post_seconds`
+  - `fps`
+  - `codec`
+
+- `notifications`
+  - `enabled`
+  - `email_enabled`
+  - `default_recipients`
+
+- `security`
+  - `use_private_bucket`
+  - `signed_url_seconds`
+  - `evidence_retention_days`
+  - `audit_enabled`
+
 - `cameras`
   - `camera_id`
   - `camera_name`
   - `source`
   - `enabled`
+  - `location`
+  - `department`
+  - hierarchy fields such as `site_name`, `building_name`, `floor_name`, `workshop_name`, `zone_name`
 
-- `security`
-  - `evidence_retention_days`
-  - `signed_url_seconds`
+### 12. Supabase SQL Setup
 
-Current preview-related behavior:
+Run these SQL files in order:
 
-- `monitoring.preview_fps` defaults to `20.0`
-- browser preview draws green boxes for safe detections
-- browser preview draws red boxes for violations
+1. `sql/supabase_phase1_schema.sql`
+2. `sql/supabase_identity_extension.sql`
+3. `sql/supabase_identity_ai_extension.sql`
+4. `sql/supabase_identity_delivery_extension.sql`
+5. `sql/supabase_product_extension.sql`
 
-### Recommended Startup Modes
+This order matters because later scripts extend tables created in earlier phases.
 
-#### 1. Browser Camera Preview for Local Webcam
+### 13. Identity Data Preparation
 
-This is the recommended mode if you want live webcam output that feels closer to real video in the browser.
+#### Person registry
+
+Example and active registry:
+
+- `configs/person_registry.example.json`
+- `configs/person_registry.json`
+
+Generate demo people if needed:
+
+```bash
+.venv\Scripts\python.exe scripts\generate_demo_persons.py
+```
+
+#### Sync registry to Supabase
+
+```bash
+.venv\Scripts\python.exe scripts\sync_person_registry.py
+```
+
+#### Suggest or apply camera default people
+
+```bash
+.venv\Scripts\python.exe scripts\bootstrap_identity_defaults.py
+.venv\Scripts\python.exe scripts\bootstrap_identity_defaults.py --apply
+```
+
+#### Register face profiles
+
+Put local face samples under:
+
+```text
+artifacts/identity/faces/<person_id>/
+```
+
+Then run:
+
+```bash
+.venv\Scripts\python.exe scripts\register_face_profiles.py
+```
+
+#### Audit identity delivery readiness
+
+```bash
+.venv\Scripts\python.exe scripts\identity_delivery_audit.py
+```
+
+### 14. Recommended Non-Docker Startup Modes
+
+#### A. Browser local webcam preview
+
+Recommended for simple local demos.
 
 Launch:
 
@@ -214,41 +432,17 @@ Launch:
 start_desktop_webcam.cmd
 ```
 
-What it does now:
+Important note:
 
-- starts the lightweight local preview service
-- opens the browser automatically
-- uses the browser camera directly
-- sends frames to the local inference endpoint
-- overlays green/red boxes on top of the live video
+Despite its name, this script starts the browser preview path, not the native desktop viewer.
 
-Manual launch:
+Direct Python launch:
 
 ```bash
-.venv\Scripts\python.exe scripts/browser_camera_preview.py
+.venv\Scripts\python.exe scripts\browser_camera_preview.py
 ```
 
-Default preview URL pattern:
-
-```text
-http://127.0.0.1:8876/browser/<camera_id>
-```
-
-Example:
-
-```text
-http://127.0.0.1:8876/browser/cam-local-001
-```
-
-Important requirements:
-
-- the browser must allow camera permission
-- use `localhost`, `127.0.0.1`, or HTTPS
-- another application must not lock the webcam
-
-#### 2. Desktop Real-Time Viewer
-
-Use this mode if you want a local desktop window instead of a browser page.
+#### B. Native desktop real-time viewer
 
 Launch:
 
@@ -256,67 +450,37 @@ Launch:
 start_realtime_webcam.cmd
 ```
 
-Manual launch:
+Direct Python launch:
 
 ```bash
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0
+.venv\Scripts\python.exe scripts\realtime_camera_viewer.py --source 0
 ```
 
-Useful tuning examples:
+#### C. Managed dashboard + monitor services on the host
+
+Launch both:
 
 ```bash
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0 --imgsz 256 --detect-interval-ms 100
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0 --camera-width 1280 --camera-height 720
+start_host_services.cmd
 ```
 
-How it works:
-
-- background thread continuously reads the latest frame
-- detector runs on an interval
-- last detection is briefly reused to keep motion smoother
-- green box means helmet
-- red box means no helmet
-
-Close methods:
-
-- close the window
-- press `Esc`
-- press `q`
-
-#### 3. Streamlit Operations Console
-
-Use this mode for operations, review, reporting, and administration.
-
-Run locally:
+Launch dashboard only:
 
 ```bash
-set YOLO_CONFIG_DIR=%CD%\.ultralytics
-.venv\Scripts\streamlit.exe run app.py
+start_dashboard_service.cmd
 ```
 
-Default URL:
+Launch monitor only:
 
-```text
-http://localhost:8501
+```bash
+start_monitor_service.cmd
 ```
 
-Best use cases:
+These managed services use health checks and automatic restart supervision.
 
-- review alerts
-- view camera status
-- manage metadata
-- export reports
-- inspect notifications
+### 15. Optional Docker Startup Mode
 
-This dashboard is not the best path when your only goal is the smoothest local webcam preview. For that, prefer the browser camera preview or the desktop real-time viewer above.
-
-#### 4. Docker Stream Mode
-
-Use this mode for stream-based sources such as:
-
-- RTSP cameras
-- HTTP video streams
-- phone camera apps pushing RTMP
+Use Docker only if you want containerized stream monitoring.
 
 Launch:
 
@@ -324,377 +488,358 @@ Launch:
 start_stream_docker.cmd
 ```
 
-Equivalent manual command:
+This script validates:
+
+- `HELMET_MONITOR_STREAM_URL`
+- `HELMET_PUBLISH_URL` when RTMP relay mode is used
+
+Then it runs:
 
 ```bash
 docker compose up -d --build
 ```
 
-Default services:
+Important limitations:
 
-- `dashboard`
-- `monitor`
-- `rtmp-gateway`
+- Docker Desktop on Windows/macOS is not ideal for direct laptop webcam access inside the container.
+- For local laptop webcam mode, host-based scripts are recommended.
 
-Optional edge profile:
+### 16. Validation and Smoke Tests
 
-```bash
-docker compose --profile edge up -d --build
-```
-
-Recommended RTMP flow:
-
-1. your phone pushes RTMP to `HELMET_PUBLISH_URL`
-2. the in-cluster relay is `rtmp://rtmp-gateway:1935/live/stream`
-3. the Docker monitor reads `HELMET_MONITOR_STREAM_URL`
-
-### Database Setup
-
-Run these SQL files in Supabase SQL Editor in order:
-
-1. `sql/supabase_phase1_schema.sql`
-2. `sql/supabase_identity_extension.sql`
-3. `sql/supabase_identity_delivery_extension.sql`
-4. `sql/supabase_identity_ai_extension.sql`
-5. `sql/supabase_product_extension.sql`
-
-Then verify:
+#### Readiness
 
 ```bash
-.venv\Scripts\python.exe scripts/check_supabase.py
+.venv\Scripts\python.exe scripts\doctor.py --json
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
 ```
 
-Expected signals:
-
-- `identity_extension=ready`
-- `identity_ai_extension=ready`
-- `product_extension=ready`
-- `storage_bucket_ready=true`
-
-If the output says local backend or missing credentials, the project is still running in local fallback mode.
-
-### Optional Identity Stack
-
-Install optional packages:
+#### Supabase
 
 ```bash
-.venv\Scripts\python.exe -m pip install -r requirements.identity.txt
+.venv\Scripts\python.exe scripts\check_supabase.py
+.venv\Scripts\python.exe scripts\ensure_storage_bucket.py
 ```
 
-Register local face profiles:
-
-1. Put images into `artifacts/identity/faces/<person_id>/`
-2. Run:
+#### Storage and notification delivery
 
 ```bash
-.venv\Scripts\python.exe scripts/register_face_profiles.py
+.venv\Scripts\python.exe scripts\validate_storage_delivery.py --require-success
+.venv\Scripts\python.exe scripts\validate_notification_delivery.py --mode auto
 ```
 
-Sync the registry:
+#### Face profile validation
 
 ```bash
-.venv\Scripts\python.exe scripts/sync_person_registry.py
+.venv\Scripts\python.exe scripts\validate_face_profiles.py --person-ids person-001,person-002
 ```
 
-### Smoke Tests and Validation
-
-Run local smoke:
+#### Model validation
 
 ```bash
-.venv\Scripts\python.exe scripts/smoke_product.py
+.venv\Scripts\python.exe scripts\validate_yolo.py --data configs/datasets/shwd_yolo26.yaml
 ```
 
-Run model-backed smoke:
+#### Product smoke tests
 
 ```bash
-.venv\Scripts\python.exe scripts/smoke_product.py --use-model
+.venv\Scripts\python.exe scripts\smoke_product.py
+.venv\Scripts\python.exe scripts\trigger_test_alert.py --person-id person-001
+.venv\Scripts\python.exe scripts\closed_loop_smoke.py --build-feedback-dataset
 ```
 
-Run strict validation:
-
-```bash
-.venv\Scripts\python.exe scripts/smoke_product.py --strict-runtime --use-model --require-model-detection --final-status ignored
-```
-
-Run notification-only validation:
-
-```bash
-.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode dry_run
-.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --recipient your@email.com
-.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --local-runtime-dir %TEMP%\helmet_notify_check
-```
-
-Audit identity coverage and default-person readiness:
-
-```bash
-.venv\Scripts\python.exe scripts/enrich_identity_registry.py --write
-.venv\Scripts\python.exe scripts/identity_delivery_audit.py
-.venv\Scripts\python.exe scripts/bootstrap_identity_defaults.py
-```
-
-Validate Supabase Storage upload / signed URL / cleanup:
-
-```bash
-.venv\Scripts\python.exe scripts/validate_storage_delivery.py --require-success
-```
-
-Run tests:
+#### Test suite
 
 ```bash
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-Useful checks:
+### 17. Training and Model Lifecycle
+
+#### Train
 
 ```bash
-.venv\Scripts\python.exe scripts/dashboard_healthcheck.py
-.venv\Scripts\python.exe scripts/monitor_healthcheck.py
-.venv\Scripts\python.exe scripts/ops_status.py --json
+.venv\Scripts\python.exe scripts\train_yolo.py --data configs/datasets/shwd_yolo26.yaml --name train_product
 ```
 
-Managed local services:
+#### Validate
 
 ```bash
-start_dashboard_service.cmd
-start_monitor_service.cmd
-start_host_services.cmd
+.venv\Scripts\python.exe scripts\validate_yolo.py --data configs/datasets/shwd_yolo26.yaml --weights <model_path>
 ```
 
-Install Windows auto-start tasks:
+#### Import the Voxel hard-hat dataset
+
+```bash
+.venv\Scripts\python.exe scripts\import_voxel_hardhat.py
+```
+
+#### Feedback loop
+
+```bash
+.venv\Scripts\python.exe scripts\model_feedback_loop.py export-feedback
+.venv\Scripts\python.exe scripts\model_feedback_loop.py build-dataset
+.venv\Scripts\python.exe scripts\model_feedback_loop.py full-cycle --train --promote
+```
+
+### 18. Operations and Release Management
+
+#### Service health and status
+
+```bash
+.venv\Scripts\python.exe scripts\ops_status.py
+.venv\Scripts\python.exe scripts\monitor_healthcheck.py
+.venv\Scripts\python.exe scripts\dashboard_healthcheck.py
+```
+
+#### Backups
+
+```bash
+.venv\Scripts\python.exe scripts\backup_system.py --name ops-baseline
+.venv\Scripts\python.exe scripts\restore_system.py <backup_zip>
+```
+
+#### Release snapshots
+
+```bash
+.venv\Scripts\python.exe scripts\release_manager.py snapshot --name my-release --activate
+.venv\Scripts\python.exe scripts\release_manager.py status
+.venv\Scripts\python.exe scripts\release_manager.py rollback --steps 1
+```
+
+#### Windows autostart
 
 ```bash
 install_windows_autostart.cmd
 uninstall_windows_autostart.cmd
 ```
 
-The installer prefers Windows Scheduled Tasks and automatically falls back to the user Startup folder when logon-task creation is blocked.
+### 19. Security Notes
 
-### Product Scope
+- Prefer `security.use_private_bucket=true`.
+- Prefer signed URLs over public evidence URLs.
+- Keep camera credentials out of tracked config files.
+- Keep `.env` local and rotate any exposed secrets.
+- Use trusted console authentication (`HELMET_AUTH_ADMIN_*` or managed auth users file).
 
-Current product-style capabilities include:
+### 20. Troubleshooting
 
-- multi-source video ingestion
-- helmet / no-helmet detection
-- tracking and event judgment
-- OCR and face-resolution extensions
-- alert review workflow
-- evidence snapshots and clips
-- camera management
-- notifications and logs
-- reporting and export
-- hard-case collection for retraining
+#### No local webcam appears
 
-### Backup, Restore, and Release
+- make sure `camera_use_laptop_camera=true` if you want local-camera demo behavior
+- close other applications that may hold the webcam
+- use host mode instead of Docker for local webcam access
 
-Create a backup:
+#### Dashboard works but monitor does not
 
-```bash
-.venv\Scripts\python.exe scripts/backup_system.py --name ops-baseline
-```
+- check `scripts\start_monitor_service.cmd`
+- inspect `artifacts\runtime\services\monitor_service.log`
+- run `scripts\doctor.py --deploy-strict`
 
-Restore a backup:
+#### Supabase falls back to local storage
 
-```bash
-.venv\Scripts\python.exe scripts/restore_system.py artifacts\backups\ops-baseline.zip
-```
+- verify `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+- run all SQL extensions in order
+- run `scripts\check_supabase.py`
 
-Create and activate a release snapshot:
+#### Notifications are skipped
 
-```bash
-.venv\Scripts\python.exe scripts/release_manager.py snapshot --name baseline-runtime --activate
-```
+- check SMTP variables in `.env`
+- run `scripts\validate_notification_delivery.py`
 
-Rollback:
+#### Face recognition or OCR is unavailable
 
-```bash
-.venv\Scripts\python.exe scripts/release_manager.py rollback --steps 1
-```
-
-### Model Feedback Loop
-
-Export feedback:
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py export-feedback
-```
-
-Build a merged dataset:
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py build-dataset
-```
-
-Register and promote a model:
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py register-model artifacts\training_runs\helmet_project\cpu_test3\weights\best.pt
-.venv\Scripts\python.exe scripts/model_feedback_loop.py promote-model --model-path artifacts\training_runs\helmet_project\cpu_test3\weights\best.pt
-```
-
-Run a full cycle:
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py full-cycle --train --promote
-```
-
-### Troubleshooting
-
-#### Browser preview does not open automatically
-
-- manually open the URL printed in the terminal
-- default port is usually `8876`
-- check whether another process is already using the preview port
-
-#### Browser preview opens but no camera image appears
-
-- allow browser camera permission
-- close other camera applications
-- confirm that a local camera is enabled in configuration
-- confirm that `camera_use_laptop_camera=true` is set when you want local webcam mode
-
-#### `localhost:8501` shows a blank or skeleton page
-
-- wait for Streamlit to finish loading
-- rebuild and restart the dashboard if you are using Docker:
-
-```bash
-docker compose up -d --build dashboard
-```
-
-- if your goal is smooth live webcam preview, use `start_desktop_webcam.cmd` instead of relying on the heavy dashboard page
-
-#### Docker cannot read the webcam
-
-This is expected on many Windows setups. Use one of these instead:
-
-- browser camera preview
-- desktop real-time viewer
-- RTSP / RTMP stream mode
-
-#### Preview is not smooth enough
-
-Try one or more of the following:
-
-- use browser camera preview instead of the Streamlit dashboard
-- use the desktop real-time viewer
-- reduce `imgsz`
-- increase `detect-interval-ms`
-- close other CPU-heavy applications
-- move from CPU to GPU if available
-
-### Additional References
-
-- `docs/industrialization_blueprint.md`
-- `docs/productization_checklist.md`
-- `docs/model_training_plan.md`
-- `docs/keys_and_services_checklist.md`
+- install `requirements.identity.txt`
+- verify local face samples and person registry quality
 
 ---
 
 ## 中文版本
 
-### 项目简介
+### 1. 项目定位
 
-这个仓库是一套基于 YOLO 的安全帽检测系统，包含检测模型、监控 worker、实时预览能力，以及 Streamlit 运维控制台。
+这个仓库是一个“产品化的安全帽监测系统”，核心不是单一模型 Demo，而是一整套从检测到闭环处置的工作流系统，包含：
 
-当前系统支持：
+- 基于 YOLO 的违规检测
+- 持续运行的监控 worker
+- Streamlit 运维控制台
+- Supabase 告警与流程数据面
+- 可选的身份解析能力（工牌 OCR、人脸识别、LLM 回退）
 
-- 本地摄像头检测
-- 浏览器实时摄像头预览，并叠加红框 / 绿框
-- 本地桌面实时预览窗口
-- RTSP / HTTP / RTMP 视频流检测
-- Streamlit 运维与告警管理后台
-- Supabase 告警存储与闭环流程
-- 可选的人脸识别与 OCR 扩展
-- Hard Case 采集与后续模型迭代
+系统可以完成：
 
-当前颜色规则：
+- 未戴安全帽违规检测
+- 自动生成告警、快照、短视频证据
+- 识别人员身份
+- 发送通知
+- 人工复核与结案
+- 误报 / 漏报案例回流
+- 服务健康检查、备份、发布快照和运维管理
 
-- 绿色框：检测到已佩戴安全帽
-- 红色框：检测到未佩戴安全帽或违规目标
+当前画面语义：
 
-### 仓库里现在有什么
+- 绿色框 = 安全 / 检测到安全帽
+- 红色框 = 违规 / 未戴安全帽
 
-这个项目现在主要有三条运行路径：
+### 2. 运行模式
 
-1. 本地浏览器摄像头预览
-   这是本地摄像头场景下最推荐的方式，画面更接近“视频实时预览”。
+目前支持三条主运行路径：
 
-2. 本地桌面实时预览窗口
-   适合想直接弹出本地窗口、不经过网页重页面的场景。
+1. 本机浏览器摄像头预览
+   适合轻量演示，不需要先启动完整控制台。
 
-3. Docker 流媒体监控模式
-   适合 RTSP / HTTP / RTMP 输入，例如手机推流或工业摄像头。
+2. 本机桌面原生实时预览
+   适合用 Tkinter + OpenCV 弹出本地窗口做低延迟观察。
 
-### 核心组件
+3. 主机受管服务模式
+   适合 Windows 主机上稳定跑 dashboard + monitor。
+
+Docker 是可选项，不是必选项。如果你当前不打算做 Docker 部署，可以先完全忽略 Docker 相关章节，只使用主机脚本即可。
+
+### 3. 核心组件
 
 - `app.py`
-  Streamlit 运维控制台入口。
+  主 Streamlit 产品控制台。
 
-- `src/helmet_monitoring/services/detector.py`
-  安全帽检测封装。
+- `src/helmet_monitoring/core/config.py`
+  全局配置中心，负责把 `.env` 和 `configs/runtime*.json` 合并成 `AppSettings`。
 
 - `src/helmet_monitoring/services/monitor.py`
-  连续监控 worker，主要用于流媒体输入。
+  最核心的后端编排器：读帧、检测、治理、身份解析、存证、告警入库、通知发送。
+
+- `src/helmet_monitoring/services/detector.py`
+  YOLO 检测封装，支持普通检测和可选跟踪。
+
+- `src/helmet_monitoring/services/event_engine.py`
+  把逐帧检测聚合为事件级告警。
+
+- `src/helmet_monitoring/services/identity_resolver.py`
+  级联身份解析：工牌 OCR、人脸识别、LLM 回退、摄像头默认人员规则。
+
+- `src/helmet_monitoring/storage/repository.py`
+  存储抽象层，优先 Supabase，异常时可回退到本地 JSON/JSONL。
+
+- `src/helmet_monitoring/storage/evidence_store.py`
+  本地保存证据，同时可选上传到 Supabase Storage。
 
 - `src/helmet_monitoring/ui/live_preview_stream.py`
-  轻量实时预览服务，提供：
+  轻量预览服务，暴露：
   - `/health`
-  - `/browser/<camera_id>` 浏览器摄像头预览页
-  - `/infer/<camera_id>` 浏览器帧推理接口
-  - `/mjpeg/<camera_id>` MJPEG 预览接口
+  - `/browser/<camera_id>`
+  - `/infer/<camera_id>`
+  - `/mjpeg/<camera_id>`
 
-- `scripts/browser_camera_preview.py`
-  启动轻量浏览器预览服务，并自动打开浏览器。
+### 4. 整体架构
 
-- `scripts/realtime_camera_viewer.py`
-  基于 Tkinter + OpenCV 的本地桌面实时窗口。
+高层处理流程如下：
 
-- `scripts/run_monitor.py`
-  监控 worker 入口。
+1. `load_settings()` 加载配置。
+2. `CameraStream` 打开摄像头或远程流。
+3. `HelmetDetector` 做 YOLO 推理。
+4. `ViolationEventEngine` 把连续违规框聚合成候选告警。
+5. `FalsePositiveGovernance` 做误报治理和人工复核标记。
+6. `IdentityResolver` 尝试 OCR / 人脸 / LLM / 默认绑定。
+7. `EvidenceStore` 写入快照和 clip。
+8. `AlertRepository` 落库告警、动作、通知、hard case、审计日志。
+9. `NotificationService` 发送或模拟通知。
+10. `AlertWorkflowService` 执行派单、整改、误报关闭与样本回流。
 
-- `docker-compose.yml`
-  Docker 栈，包含 dashboard、RTMP 网关和 monitor。
-
-### 仓库结构
+### 5. 仓库结构
 
 ```text
 safety_helmet_yolo26/
-├─ app.py                             # Streamlit 运维控制台入口
-├─ docker-compose.yml                 # dashboard + monitor + RTMP 中继编排
+├─ app.py
+├─ Dockerfile
+├─ docker-compose.yml
+├─ requirements.txt
+├─ requirements.identity.txt
+├─ requirements.dev.txt
 ├─ configs/
-│  ├─ runtime.json                    # 当前生效的运行配置
-│  └─ runtime.example.json            # 运行配置模板
-├─ scripts/
-│  ├─ start_desktop_webcam.cmd        # 浏览器本机摄像头演示启动器
-│  ├─ start_realtime_webcam.cmd       # 本地桌面实时窗口启动器
-│  ├─ start_stream_docker.cmd         # Docker 流媒体模式启动器
-│  ├─ start_dashboard_service.cmd     # dashboard 托管服务启动器
-│  ├─ start_monitor_service.cmd       # monitor 托管服务启动器
-│  ├─ start_host_services.cmd         # 同时拉起两类托管服务
-│  ├─ doctor.py                       # 环境与依赖诊断脚本
-│  ├─ check_supabase.py               # Supabase 就绪检查脚本
-│  ├─ smoke_product.py                # 端到端冒烟测试脚本
-│  ├─ validate_notification_delivery.py # 独立通知链路验收脚本
-│  ├─ bootstrap_identity_defaults.py  # 摄像头默认负责人建议/回填脚本
-│  ├─ identity_delivery_audit.py      # 身份资料覆盖率审计脚本
-│  ├─ dashboard_healthcheck.py        # dashboard 健康检查
-│  ├─ monitor_healthcheck.py          # monitor worker 健康检查
-│  └─ install_windows_autostart.ps1   # Windows 自启动计划任务安装脚本
+├─ deploy/
+├─ sql/
 ├─ src/
-│  └─ helmet_monitoring/              # 核心代码包（检测、监控、UI 服务）
-├─ sql/                               # Supabase 建表与扩展 SQL
-├─ tests/                             # 自动化测试
-├─ artifacts/                         # 运行产物（抓拍、告警、训练、备份）
-└─ docs/                              # 产品化与运维文档
+├─ scripts/
+├─ tests/
+├─ data/
+├─ artifacts/
+├─ docs/
+└─ legacy/
 ```
 
-### 运行环境
+#### 关键目录说明
 
-- 推荐 Python：`3.11`
-- 兼容回退版本：`3.10`
+- `configs/`
+  运行时配置、人员注册表、数据集 YAML、环境变量模板。
 
-创建虚拟环境并安装依赖：
+- `deploy/`
+  可选边缘代理部署配置。
+
+- `sql/`
+  Supabase 建表与扩表脚本。
+
+- `src/helmet_monitoring/`
+  真实业务代码主体。
+
+- `scripts/`
+  启动脚本、健康检查、烟雾测试、训练、发布、备份等运维辅助脚本。
+
+- `tests/`
+  pytest 自动化测试。
+
+- `data/`
+  数据集和 hard case 标注反馈数据。
+
+- `artifacts/`
+  运行产物、快照、模型、导出、服务日志、备份、发布快照。
+
+### 6. 技术栈
+
+#### 视觉与模型
+
+- Ultralytics YOLO
+- OpenCV
+- NumPy
+- Pillow
+
+#### 界面与分析
+
+- Streamlit
+- Altair
+- Pandas
+
+#### 身份解析
+
+- PaddleOCR
+- RapidOCR
+- facenet-pytorch
+- torch
+
+#### 平台集成
+
+- Supabase Database
+- Supabase Storage
+- httpx
+- python-dotenv
+- smtplib
+
+#### 运维与部署
+
+- Docker
+- docker-compose
+- Caddy
+- nginx-rtmp
+- pytest
+- GitHub Actions
+
+### 7. Python 版本要求
+
+- 推荐：Python `3.11`
+- 兼容：Python `3.10`
+
+当前仓库本地和 Dockerfile 默认都使用 Python 3.11。
+
+### 8. 安装方式
+
+创建虚拟环境：
 
 ```bash
 python -m venv .venv
@@ -703,471 +848,370 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.dev.txt
 ```
 
-### 初始准备
+### 9. 首次初始化
 
-初始化工作区：
-
-```bash
-.venv\Scripts\python.exe scripts/bootstrap_workspace.py --copy-env-example --copy-registry-example
-```
-
-运行环境检查：
+补齐目录与示例文件：
 
 ```bash
-.venv\Scripts\python.exe scripts/doctor.py --ensure-scaffold
+.venv\Scripts\python.exe scripts\bootstrap_workspace.py --copy-env-example --copy-registry-example
 ```
 
-如需更严格的部署检查：
+执行 readiness 检查：
 
 ```bash
-.venv\Scripts\python.exe scripts/doctor.py --deploy-strict
+.venv\Scripts\python.exe scripts\doctor.py --ensure-scaffold
 ```
 
-### 环境变量配置
+执行严格部署检查：
 
-从 `configs/supabase.example.env` 复制生成 `.env`，再填入你自己的真实值。
+```bash
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
+```
 
-重要变量包括：
+### 10. 环境变量
+
+建议以 `configs/supabase.example.env` 为模板创建 `.env`。
+
+关键变量包括：
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`
+- `HELMET_STORAGE_BACKEND`
 - `HELMET_CONFIG_PATH`
-- `HELMET_PUBLISH_URL`
 - `HELMET_MONITOR_STREAM_URL`
-- `camera_use_laptop_camera=true`
+- `HELMET_PUBLISH_URL`
 - `HELMET_LIVE_PREVIEW_PORT`
-- `OPENAI_API_KEY`
-- `DEEPSEEK_API_KEY`
+- `camera_use_laptop_camera=true`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
 - `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
+- `SMTP_USE_TLS`
 - `ALERT_EMAIL_RECIPIENTS`
-- `HELMET_AUTH_USERS_FILE`
+- `OPENAI_API_KEY`
+- `DEEPSEEK_API_KEY`
 - `HELMET_AUTH_ADMIN_USERNAME`
 - `HELMET_AUTH_ADMIN_PASSWORD_HASH`
+- `HELMET_AUTH_ADMIN_DISPLAY_NAME`
+- `HELMET_AUTH_ADMIN_ROLE`
 
 说明：
 
-- `camera_use_laptop_camera=true` 会在加载配置时强制走本地摄像头演示模式。
-- `HELMET_LIVE_PREVIEW_PORT` 默认是 `8876`。
-- 不要把真实密钥提交到版本控制。
-- 如果开发时有密钥泄露，正式部署前请先轮换。
+- 如果你想优先演示本机笔记本摄像头，保留 `camera_use_laptop_camera=true`。
+- 如果你想跑 RTSP / RTMP / HTTP 远程流，关闭这个开关并配置远程流地址。
+- 不要提交真实密钥。
 
-### 运行配置说明
+### 11. 运行时配置
 
-主配置文件是 `configs/runtime.json`。
+主配置文件：
 
-重点字段：
+```text
+configs/runtime.json
+```
 
+重要配置段：
+
+- `repository_backend`
 - `model`
-  - `path`：模型路径
-  - `confidence`：检测阈值
-  - `imgsz`：推理尺寸
-  - `device`：设备，例如 `cpu`
-  - `safe_labels`：视为安全的标签
-  - `violation_labels`：视为违规的标签
-
+- `event_rules`
 - `monitoring`
-  - `frame_stride`
-  - `preview_fps`
-  - `camera_retry_seconds`
-  - `heartbeat_interval_seconds`
-  - `max_frames`
-
-- `cameras`
-  - `camera_id`
-  - `camera_name`
-  - `source`
-  - `enabled`
-
+- `identity`
+- `face_recognition`
+- `ocr`
+- `llm_fallback`
+- `governance`
+- `clip`
+- `notifications`
 - `security`
-  - `evidence_retention_days`
-  - `signed_url_seconds`
+- `cameras`
 
-当前和预览相关的行为：
+### 12. Supabase SQL 初始化顺序
 
-- `monitoring.preview_fps` 默认是 `20.0`
-- 安全目标画绿框
-- 违规目标画红框
+请按下面顺序执行：
 
-### 推荐启动方式
+1. `sql/supabase_phase1_schema.sql`
+2. `sql/supabase_identity_extension.sql`
+3. `sql/supabase_identity_ai_extension.sql`
+4. `sql/supabase_identity_delivery_extension.sql`
+5. `sql/supabase_product_extension.sql`
 
-#### 1. 本地浏览器摄像头预览
+后面的脚本依赖前面已经创建好的表和字段，所以顺序不能乱。
 
-如果你要的是“像视频一样尽量顺滑的本地实时预览”，优先使用这个模式。
+### 13. 身份数据准备
 
-启动方式：
+#### 人员注册表
+
+相关文件：
+
+- `configs/person_registry.example.json`
+- `configs/person_registry.json`
+
+如需生成演示人员：
+
+```bash
+.venv\Scripts\python.exe scripts\generate_demo_persons.py
+```
+
+#### 同步到 Supabase
+
+```bash
+.venv\Scripts\python.exe scripts\sync_person_registry.py
+```
+
+#### 自动建议摄像头默认人员
+
+```bash
+.venv\Scripts\python.exe scripts\bootstrap_identity_defaults.py
+.venv\Scripts\python.exe scripts\bootstrap_identity_defaults.py --apply
+```
+
+#### 注册人脸特征
+
+把人脸样本放到：
+
+```text
+artifacts/identity/faces/<person_id>/
+```
+
+然后执行：
+
+```bash
+.venv\Scripts\python.exe scripts\register_face_profiles.py
+```
+
+#### 审计身份覆盖率
+
+```bash
+.venv\Scripts\python.exe scripts\identity_delivery_audit.py
+```
+
+### 14. 推荐的非 Docker 启动方式
+
+#### A. 浏览器本机摄像头预览
+
+适合本机轻量演示。
+
+启动：
 
 ```bash
 start_desktop_webcam.cmd
 ```
 
-它现在的行为是：
+重要说明：
 
-- 启动本地轻量预览服务
-- 自动打开浏览器
-- 浏览器直接读取摄像头
-- 浏览器把帧发送到本地推理接口
-- 页面上叠加红框 / 绿框
+这个脚本名字里虽然有 “desktop”，但它实际启动的是浏览器预览路径，不是原生桌面 viewer。
 
-手动启动方式：
+Python 直接启动：
 
 ```bash
-.venv\Scripts\python.exe scripts/browser_camera_preview.py
+.venv\Scripts\python.exe scripts\browser_camera_preview.py
 ```
 
-默认 URL 形式：
+#### B. 原生桌面实时预览
 
-```text
-http://127.0.0.1:8876/browser/<camera_id>
-```
-
-例如：
-
-```text
-http://127.0.0.1:8876/browser/cam-local-001
-```
-
-注意事项：
-
-- 浏览器必须允许摄像头权限
-- 建议使用 `localhost`、`127.0.0.1` 或 HTTPS
-- 不能有别的软件长期占用摄像头
-
-#### 2. 本地桌面实时窗口
-
-如果你更希望直接打开一个本地桌面窗口，而不是网页，可以用这个模式。
-
-启动方式：
+启动：
 
 ```bash
 start_realtime_webcam.cmd
 ```
 
-手动启动方式：
+Python 直接启动：
 
 ```bash
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0
+.venv\Scripts\python.exe scripts\realtime_camera_viewer.py --source 0
 ```
 
-常用调优示例：
+#### C. 主机受管服务模式
+
+同时启动 dashboard + monitor：
 
 ```bash
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0 --imgsz 256 --detect-interval-ms 100
-.venv\Scripts\python.exe scripts/realtime_camera_viewer.py --source 0 --camera-width 1280 --camera-height 720
+start_host_services.cmd
 ```
 
-这个模式的特点：
-
-- 后台线程持续读取最新帧
-- 检测按固定间隔执行
-- 短时间复用上一轮框结果来减轻卡顿感
-- 绿框表示戴了安全帽
-- 红框表示没戴安全帽
-
-关闭方式：
-
-- 直接关闭窗口
-- 按 `Esc`
-- 按 `q`
-
-#### 3. Streamlit 运维控制台
-
-如果你要做的是告警管理、人工复核、报表和配置管理，使用这个模式。
-
-本地启动：
+只启动 dashboard：
 
 ```bash
-set YOLO_CONFIG_DIR=%CD%\.ultralytics
-.venv\Scripts\streamlit.exe run app.py
+start_dashboard_service.cmd
 ```
 
-默认地址：
+只启动 monitor：
 
-```text
-http://localhost:8501
+```bash
+start_monitor_service.cmd
 ```
 
-适合的用途：
+这些受管服务带有健康检查和自动重启能力。
 
-- 人工复核告警
-- 查看摄像头状态
-- 管理元数据
-- 导出报表
-- 查看通知日志
+### 15. 可选的 Docker 启动方式
 
-如果你的唯一目标是“本地摄像头尽量丝滑地看画面和框”，这个页面不是最佳入口，优先用前面的浏览器预览或桌面实时窗口。
-
-#### 4. Docker 流媒体模式
-
-这个模式适合以下输入源：
-
-- RTSP 摄像头
-- HTTP 视频流
-- 手机 RTMP 推流
-
-启动方式：
+如果你需要容器化流媒体监控，可以使用：
 
 ```bash
 start_stream_docker.cmd
 ```
 
-等价手动命令：
+它会先检查：
+
+- `HELMET_MONITOR_STREAM_URL`
+- 如果走 RTMP relay，还会检查 `HELMET_PUBLISH_URL`
+
+然后执行：
 
 ```bash
 docker compose up -d --build
 ```
 
-默认服务包括：
+注意：
 
-- `dashboard`
-- `monitor`
-- `rtmp-gateway`
+- Windows / macOS 下的 Docker Desktop 不适合直接读取本机笔记本摄像头。
+- 本机笔记本摄像头模式优先建议走主机脚本，而不是容器。
 
-如果需要 edge 反向代理：
+### 16. 验证与烟雾测试
 
-```bash
-docker compose --profile edge up -d --build
-```
-
-推荐 RTMP 路径：
-
-1. 手机推流到 `HELMET_PUBLISH_URL`
-2. Docker 内部中继地址是 `rtmp://rtmp-gateway:1935/live/stream`
-3. `monitor` 读取 `HELMET_MONITOR_STREAM_URL`
-
-### 数据库配置
-
-在 Supabase SQL Editor 中按顺序执行以下 SQL：
-
-1. `sql/supabase_phase1_schema.sql`
-2. `sql/supabase_identity_extension.sql`
-3. `sql/supabase_identity_delivery_extension.sql`
-4. `sql/supabase_identity_ai_extension.sql`
-5. `sql/supabase_product_extension.sql`
-
-然后执行检查：
+#### readiness
 
 ```bash
-.venv\Scripts\python.exe scripts/check_supabase.py
+.venv\Scripts\python.exe scripts\doctor.py --json
+.venv\Scripts\python.exe scripts\doctor.py --deploy-strict
 ```
 
-理想输出包括：
-
-- `identity_extension=ready`
-- `identity_ai_extension=ready`
-- `product_extension=ready`
-- `storage_bucket_ready=true`
-
-如果输出提示是本地后端或缺少凭据，说明系统仍处于本地 fallback 模式。
-
-### 可选的人脸识别 / OCR 扩展
-
-安装可选依赖：
+#### Supabase
 
 ```bash
-.venv\Scripts\python.exe -m pip install -r requirements.identity.txt
+.venv\Scripts\python.exe scripts\check_supabase.py
+.venv\Scripts\python.exe scripts\ensure_storage_bucket.py
 ```
 
-注册本地人脸样本：
-
-1. 把图片放到 `artifacts/identity/faces/<person_id>/`
-2. 运行：
+#### 存储和通知链路
 
 ```bash
-.venv\Scripts\python.exe scripts/register_face_profiles.py
+.venv\Scripts\python.exe scripts\validate_storage_delivery.py --require-success
+.venv\Scripts\python.exe scripts\validate_notification_delivery.py --mode auto
 ```
 
-同步人员台账：
+#### 人脸 profile 验证
 
 ```bash
-.venv\Scripts\python.exe scripts/sync_person_registry.py
+.venv\Scripts\python.exe scripts\validate_face_profiles.py --person-ids person-001,person-002
 ```
 
-### 冒烟测试与校验
-
-运行本地冒烟：
+#### 模型验证
 
 ```bash
-.venv\Scripts\python.exe scripts/smoke_product.py
+.venv\Scripts\python.exe scripts\validate_yolo.py --data configs/datasets/shwd_yolo26.yaml
 ```
 
-运行带模型的冒烟：
+#### 产品级烟雾测试
 
 ```bash
-.venv\Scripts\python.exe scripts/smoke_product.py --use-model
+.venv\Scripts\python.exe scripts\smoke_product.py
+.venv\Scripts\python.exe scripts\trigger_test_alert.py --person-id person-001
+.venv\Scripts\python.exe scripts\closed_loop_smoke.py --build-feedback-dataset
 ```
 
-运行严格校验：
-
-```bash
-.venv\Scripts\python.exe scripts/smoke_product.py --strict-runtime --use-model --require-model-detection --final-status ignored
-```
-
-单独验证通知链路：
-
-```bash
-.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode dry_run
-.venv\Scripts\python.exe scripts/validate_notification_delivery.py --mode smtp --require-success --recipient your@email.com
-```
-
-审计身份资料覆盖率和默认负责人准备度：
-
-```bash
-.venv\Scripts\python.exe scripts/identity_delivery_audit.py
-.venv\Scripts\python.exe scripts/bootstrap_identity_defaults.py
-```
-
-运行测试：
+#### 单元测试
 
 ```bash
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-常用健康检查：
+### 17. 训练与模型治理
+
+#### 训练
 
 ```bash
-.venv\Scripts\python.exe scripts/dashboard_healthcheck.py
-.venv\Scripts\python.exe scripts/monitor_healthcheck.py
-.venv\Scripts\python.exe scripts/ops_status.py --json
+.venv\Scripts\python.exe scripts\train_yolo.py --data configs/datasets/shwd_yolo26.yaml --name train_product
 ```
 
-本地托管服务启动：
+#### 验证
 
 ```bash
-start_dashboard_service.cmd
-start_monitor_service.cmd
-start_host_services.cmd
+.venv\Scripts\python.exe scripts\validate_yolo.py --data configs/datasets/shwd_yolo26.yaml --weights <model_path>
 ```
 
-安装 / 卸载 Windows 自启动任务：
+#### 导入 Voxel 硬帽数据集
+
+```bash
+.venv\Scripts\python.exe scripts\import_voxel_hardhat.py
+```
+
+#### 模型反馈闭环
+
+```bash
+.venv\Scripts\python.exe scripts\model_feedback_loop.py export-feedback
+.venv\Scripts\python.exe scripts\model_feedback_loop.py build-dataset
+.venv\Scripts\python.exe scripts\model_feedback_loop.py full-cycle --train --promote
+```
+
+### 18. 运维与发布管理
+
+#### 服务状态
+
+```bash
+.venv\Scripts\python.exe scripts\ops_status.py
+.venv\Scripts\python.exe scripts\monitor_healthcheck.py
+.venv\Scripts\python.exe scripts\dashboard_healthcheck.py
+```
+
+#### 备份
+
+```bash
+.venv\Scripts\python.exe scripts\backup_system.py --name ops-baseline
+.venv\Scripts\python.exe scripts\restore_system.py <backup_zip>
+```
+
+#### 发布快照
+
+```bash
+.venv\Scripts\python.exe scripts\release_manager.py snapshot --name my-release --activate
+.venv\Scripts\python.exe scripts\release_manager.py status
+.venv\Scripts\python.exe scripts\release_manager.py rollback --steps 1
+```
+
+#### Windows 自启动
 
 ```bash
 install_windows_autostart.cmd
 uninstall_windows_autostart.cmd
 ```
 
-现在安装器会优先尝试 Windows 计划任务；如果当前环境没有创建登录任务的权限，会自动降级为当前用户 Startup 启动项，不依赖 PowerShell。
+### 19. 安全建议
 
-### 当前产品能力
+- 建议 `security.use_private_bucket=true`
+- 建议使用 signed URL，不要公开证据地址
+- 不要把摄像头敏感凭据写进受版本管理的配置文件
+- `.env` 只保留在本地，暴露过的密钥要及时轮换
+- 启用可信控制台登录（`HELMET_AUTH_ADMIN_*` 或受管账号文件）
 
-目前已经包含这些产品化能力：
+### 20. 常见问题
 
-- 多源视频输入
-- 安全帽 / 未戴安全帽检测
-- 目标跟踪与事件判定
-- OCR 与人脸识别扩展
-- 告警人工复核流程
-- 截图和视频证据留存
-- 摄像头管理
-- 通知中心与日志
-- 报表与导出
-- Hard Case 采集与后续再训练
+#### 本机摄像头打不开
 
-### 备份、恢复与发布
+- 如果要演示本机摄像头，确认 `camera_use_laptop_camera=true`
+- 关闭可能占用摄像头的其他程序
+- 本机摄像头优先使用主机模式，不建议用 Docker
 
-创建备份：
+#### dashboard 正常但 monitor 不工作
 
-```bash
-.venv\Scripts\python.exe scripts/backup_system.py --name ops-baseline
-```
+- 检查 `scripts\start_monitor_service.cmd`
+- 查看 `artifacts\runtime\services\monitor_service.log`
+- 执行 `scripts\doctor.py --deploy-strict`
 
-恢复备份：
+#### Supabase 自动回退到本地存储
 
-```bash
-.venv\Scripts\python.exe scripts/restore_system.py artifacts\backups\ops-baseline.zip
-```
+- 检查 `SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`
+- 确认 SQL 已按顺序执行
+- 执行 `scripts\check_supabase.py`
 
-创建并激活发布快照：
+#### 通知被跳过
 
-```bash
-.venv\Scripts\python.exe scripts/release_manager.py snapshot --name baseline-runtime --activate
-```
+- 检查 `.env` 里的 SMTP 配置
+- 执行 `scripts\validate_notification_delivery.py`
 
-回滚：
+#### OCR / 人脸识别不可用
 
-```bash
-.venv\Scripts\python.exe scripts/release_manager.py rollback --steps 1
-```
-
-### 模型反馈闭环
-
-导出在线反馈样本：
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py export-feedback
-```
-
-构建合并数据集：
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py build-dataset
-```
-
-注册并提升模型：
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py register-model artifacts\training_runs\helmet_project\cpu_test3\weights\best.pt
-.venv\Scripts\python.exe scripts/model_feedback_loop.py promote-model --model-path artifacts\training_runs\helmet_project\cpu_test3\weights\best.pt
-```
-
-执行完整闭环：
-
-```bash
-.venv\Scripts\python.exe scripts/model_feedback_loop.py full-cycle --train --promote
-```
-
-### 常见问题排查
-
-#### 浏览器预览没有自动打开
-
-- 手动打开终端里打印出来的 URL
-- 默认端口通常是 `8876`
-- 检查是否有其他进程占用了预览端口
-
-#### 浏览器页面打开了，但没有摄像头画面
-
-- 检查浏览器是否允许了摄像头权限
-- 关闭其他占用摄像头的软件
-- 确认配置里有启用的本地摄像头
-- 如果你想强制本地摄像头模式，确认 `.env` 中设置了 `camera_use_laptop_camera=true`
-
-#### `localhost:8501` 只显示空白页或骨架页
-
-- 先等待 Streamlit 完整加载
-- 如果你在用 Docker，可重建 dashboard：
-
-```bash
-docker compose up -d --build dashboard
-```
-
-- 如果你的目标是本地摄像头丝滑预览，不要把 `8501` 当成主要入口，优先使用 `start_desktop_webcam.cmd`
-
-#### Docker 里读不到本机摄像头
-
-这在 Windows 上很常见，推荐改用：
-
-- 浏览器摄像头预览
-- 本地桌面实时窗口
-- RTSP / RTMP 推流模式
-
-#### 画面还不够流畅
-
-可以尝试：
-
-- 使用浏览器摄像头预览，而不是 Streamlit 总览页
-- 使用桌面实时窗口
-- 降低 `imgsz`
-- 增大 `detect-interval-ms`
-- 关闭高 CPU 占用程序
-- 如果有条件，改用 GPU 推理
-
-### 更多参考文档
-
-- `docs/industrialization_blueprint.md`
-- `docs/productization_checklist.md`
-- `docs/model_training_plan.md`
-- `docs/keys_and_services_checklist.md`
+- 安装 `requirements.identity.txt`
+- 检查人脸样本和人员注册表质量
