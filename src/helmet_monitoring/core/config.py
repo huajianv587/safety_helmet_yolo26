@@ -11,6 +11,14 @@ from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+INVALID_REMOTE_SOURCE_MARKERS = {
+    "",
+    "rtsp://replace-with-your-camera-url",
+    "rtsp://replace-with-your-iphone-stream-url",
+    "http://replace-with-your-camera-url",
+    "rtmp://replace-with-your-camera-url",
+    "rtmp://rtmp-gateway:1935/live/stream",
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -249,6 +257,35 @@ def _env_flag(*names: str) -> bool:
     return False
 
 
+def _env_flag_with_default(default: bool, *names: str) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None and name.lower() != name:
+            raw = os.getenv(name.lower())
+        if raw is None and name.upper() != name:
+            raw = os.getenv(name.upper())
+        if raw is None:
+            continue
+        return _normalize_env_text(raw).lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _env_raw(*names: str) -> str | None:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None and name.lower() != name:
+            raw = os.getenv(name.lower())
+        if raw is None and name.upper() != name:
+            raw = os.getenv(name.upper())
+        if raw is not None:
+            return raw
+    return None
+
+
+def _env_text(*names: str) -> str:
+    return _normalize_env_text(_env_raw(*names))
+
+
 def _resolve_env_placeholder(value: str | None) -> str:
     cleaned = _normalize_env_text(value)
     if not cleaned.startswith("${") or not cleaned.endswith("}"):
@@ -308,10 +345,82 @@ def _looks_like_local_camera(camera: dict[str, Any]) -> bool:
     return any(marker in camera_id or marker in camera_name for marker in local_markers)
 
 
-def _apply_laptop_camera_override(cameras_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not _env_flag("camera_use_laptop_camera", "CAMERA_USE_LAPTOP_CAMERA"):
-        return [dict(camera) for camera in cameras_raw]
+def _apply_env_camera_metadata(camera: dict[str, Any], index: int) -> None:
+    text_fields = {
+        "camera_name": f"HELMET_CAMERA_NAME_{index}",
+        "location": f"HELMET_CAMERA_LOCATION_{index}",
+        "department": f"HELMET_CAMERA_DEPARTMENT_{index}",
+        "site_name": f"HELMET_CAMERA_SITE_NAME_{index}",
+        "building_name": f"HELMET_CAMERA_BUILDING_NAME_{index}",
+        "floor_name": f"HELMET_CAMERA_FLOOR_NAME_{index}",
+        "workshop_name": f"HELMET_CAMERA_WORKSHOP_NAME_{index}",
+        "zone_name": f"HELMET_CAMERA_ZONE_NAME_{index}",
+        "responsible_department": f"HELMET_CAMERA_RESPONSIBLE_DEPARTMENT_{index}",
+        "default_person_id": f"HELMET_CAMERA_DEFAULT_PERSON_ID_{index}",
+    }
+    for field_name, env_name in text_fields.items():
+        value = _env_text(env_name)
+        if value:
+            camera[field_name] = value
 
+    alert_emails = _env_text(f"HELMET_CAMERA_ALERT_EMAILS_{index}")
+    if alert_emails:
+        camera["alert_emails"] = [item.strip() for item in alert_emails.split(",") if item.strip()]
+
+
+def _merge_env_stream_cameras(cameras_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cameras = [dict(camera) for camera in cameras_raw]
+    existing_by_id = {
+        str(camera.get("camera_id", "")).strip(): idx
+        for idx, camera in enumerate(cameras)
+        if str(camera.get("camera_id", "")).strip()
+    }
+    prefix = "HELMET_MONITOR_STREAM_URL_"
+    discovered_streams: list[tuple[int, str]] = []
+    for key, value in os.environ.items():
+        upper_key = key.upper()
+        if not upper_key.startswith(prefix):
+            continue
+        suffix = upper_key[len(prefix) :]
+        if not suffix.isdigit():
+            continue
+        source = _normalize_env_text(value)
+        if not source:
+            continue
+        discovered_streams.append((int(suffix), source))
+
+    for index, source in sorted(discovered_streams):
+        camera_id = f"cam-rtsp-{index:03d}"
+        existing_index = existing_by_id.get(camera_id)
+        if existing_index is None:
+            camera = {
+                "camera_id": camera_id,
+                "camera_name": f"External Camera {index}",
+                "source": source,
+                "location": f"External Zone {index}",
+                "department": "Safety",
+                "site_name": "Demo Site",
+                "building_name": "Workshop Building",
+                "floor_name": "Floor 1",
+                "workshop_name": f"Line {index}",
+                "zone_name": f"Gate {index}",
+                "responsible_department": "Safety",
+                "alert_emails": [],
+                "enabled": True,
+            }
+            _apply_env_camera_metadata(camera, index)
+            cameras.append(camera)
+            existing_by_id[camera_id] = len(cameras) - 1
+            continue
+
+        camera = cameras[existing_index]
+        camera["source"] = source
+        camera["enabled"] = _env_flag_with_default(bool(camera.get("enabled", True)), f"HELMET_CAMERA_ENABLED_{index}")
+        _apply_env_camera_metadata(camera, index)
+    return cameras
+
+
+def _enable_local_camera_only(cameras_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cameras = [dict(camera) for camera in cameras_raw]
     local_index = next((idx for idx, camera in enumerate(cameras) if _looks_like_local_camera(camera)), None)
     if local_index is None:
@@ -326,6 +435,34 @@ def _apply_laptop_camera_override(cameras_raw: list[dict[str, Any]]) -> list[dic
     for idx, camera in enumerate(cameras):
         camera["enabled"] = idx == local_index
     return cameras
+
+
+def _looks_like_usable_remote_camera(camera: dict[str, Any]) -> bool:
+    if _looks_like_local_camera(camera):
+        return False
+    source = _resolve_env_placeholder(str(camera.get("source", ""))).strip().lower()
+    return bool(source) and source not in INVALID_REMOTE_SOURCE_MARKERS
+
+
+def _apply_camera_source_preference(cameras_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if _env_flag("camera_use_laptop_camera", "CAMERA_USE_LAPTOP_CAMERA"):
+        return _enable_local_camera_only(cameras_raw)
+
+    cameras = [dict(camera) for camera in cameras_raw]
+    if not _env_flag_with_default(True, "camera_auto_select_source", "CAMERA_AUTO_SELECT_SOURCE"):
+        return cameras
+
+    remote_indices = [
+        idx
+        for idx, camera in enumerate(cameras)
+        if bool(camera.get("enabled", True)) and _looks_like_usable_remote_camera(camera)
+    ]
+    if remote_indices:
+        for idx, camera in enumerate(cameras):
+            camera["enabled"] = idx in remote_indices
+        return cameras
+
+    return _enable_local_camera_only(cameras)
 
 
 def load_settings(config_path: str | Path | None = None) -> AppSettings:
@@ -352,7 +489,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
     clip_raw = raw.get("clip", {})
     notification_raw = raw.get("notifications", {})
     security_raw = raw.get("security", {})
-    cameras_raw = _apply_laptop_camera_override(raw.get("cameras", []))
+    cameras_raw = _apply_camera_source_preference(_merge_env_stream_cameras(raw.get("cameras", [])))
 
     default_recipients = os.getenv("ALERT_EMAIL_RECIPIENTS", "")
 

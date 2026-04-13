@@ -120,9 +120,9 @@
     },
     {
       "camera_id": "cam-rtsp-001",
-      "camera_name": "Phone Stream Camera",
-      "source": "${HELMET_MONITOR_STREAM_URL:rtmp://rtmp-gateway:1935/live/stream}",
-      "location": "Factory RTSP Zone",
+      "camera_name": "Commercial RTSP Camera",
+      "source": "${HELMET_MONITOR_STREAM_URL:rtsp://replace-with-your-camera-url}",
+      "location": "Factory Camera Zone",
       "department": "Safety",
       "site_name": "Demo Site",
       "building_name": "Workshop Building",
@@ -133,6 +133,38 @@
       "alert_emails": [],
       "enabled": true,
       "default_person_id": "person-002"
+    },
+    {
+      "camera_id": "cam-rtsp-002",
+      "camera_name": "Commercial RTSP Camera 2",
+      "source": "${HELMET_MONITOR_STREAM_URL_2:rtsp://replace-with-your-camera-url}",
+      "location": "Factory Camera Zone 2",
+      "department": "Safety",
+      "site_name": "Demo Site",
+      "building_name": "Workshop Building",
+      "floor_name": "Floor 1",
+      "workshop_name": "Line B",
+      "zone_name": "Gate 2",
+      "responsible_department": "Safety",
+      "alert_emails": [],
+      "enabled": true,
+      "default_person_id": ""
+    },
+    {
+      "camera_id": "cam-rtsp-003",
+      "camera_name": "Commercial RTSP Camera 3",
+      "source": "${HELMET_MONITOR_STREAM_URL_3:rtsp://replace-with-your-camera-url}",
+      "location": "Factory Camera Zone 3",
+      "department": "Safety",
+      "site_name": "Demo Site",
+      "building_name": "Workshop Building",
+      "floor_name": "Floor 2",
+      "workshop_name": "Line C",
+      "zone_name": "Gate 3",
+      "responsible_department": "Safety",
+      "alert_emails": [],
+      "enabled": true,
+      "default_person_id": ""
     }
   ]
 }
