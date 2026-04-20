@@ -140,6 +140,25 @@ class IdentityResolver:
                 badge_crop=badge_result.crop,
             )
 
+        if badge_person and face_match.person and badge_person.get("person_id") != face_match.person.get("person_id"):
+            return _person_to_result(
+                self.settings,
+                camera,
+                badge_person,
+                identity_status="review_required",
+                identity_source="badge_ocr_face_conflict",
+                identity_confidence=max(badge_result.confidence or 0.0, face_match.similarity or 0.0),
+                badge_text=badge_result.text,
+                badge_confidence=badge_result.confidence,
+                face_match_score=face_match.similarity,
+                review_note=(
+                    "Badge OCR and face recognition point to different people. Manual review is required "
+                    "before auto-resolve can continue."
+                ),
+                face_crop=face_match.crop,
+                badge_crop=badge_result.crop,
+            )
+
         if badge_person:
             return _person_to_result(
                 self.settings,
@@ -189,6 +208,12 @@ class IdentityResolver:
             )
 
         if face_match.person and face_match.review_required:
+            margin_note = ""
+            if face_match.top1_margin is not None:
+                margin_note = (
+                    f" Top-1 margin {face_match.top1_margin:.2f} is below the auto-confirm gate "
+                    f"{self.settings.governance.review_confidence_margin:.2f}."
+                )
             return _person_to_result(
                 self.settings,
                 camera,
@@ -199,7 +224,7 @@ class IdentityResolver:
                 badge_text=badge_result.text,
                 badge_confidence=badge_result.confidence,
                 face_match_score=face_match.similarity,
-                review_note="Face similarity is below the auto-accept threshold.",
+                review_note=f"Face identity needs manual review before auto-confirm.{margin_note}",
                 face_crop=face_match.crop,
                 badge_crop=badge_result.crop,
             )

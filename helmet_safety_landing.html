@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Safety Helmet Command Center</title>
+  <style>
+    :root {
+      --bg: #040505;
+      --panel: rgba(12, 14, 13, 0.9);
+      --green: #00ff88;
+      --cyan: #00e5ff;
+      --amber: #ffb300;
+      --red: #ff3d57;
+      --white: #f2f7f1;
+      --muted: rgba(242,247,241,0.62);
+      --dim: rgba(242,247,241,0.36);
+      --border: rgba(0,255,136,0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      letter-spacing: 0;
+    }
+
+    html {
+      height: 100%;
+      scroll-snap-type: y mandatory;
+      overflow-y: auto;
+      background: var(--bg);
+    }
+
+    body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--white);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      cursor: none;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0,255,136,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,136,.04) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,.9), transparent 96%);
+      z-index: 0;
+    }
+
+    #cur-dot,
+    #cur-ring {
+      position: fixed;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    #cur-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 14px var(--green);
+    }
+
+    #cur-ring {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,255,136,.55);
+      transition: width .2s ease, height .2s ease, border-color .2s ease;
+    }
+
+    body.hov #cur-ring {
+      width: 52px;
+      height: 52px;
+      border-color: var(--green);
+    }
+
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 44px;
+      border-bottom: 1px solid transparent;
+      transition: background .25s ease, border-color .25s ease;
+    }
+
+    nav.scrolled {
+      background: rgba(4,5,5,.82);
+      border-color: var(--border);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .nav-badge {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      border: 1px solid rgba(0,255,136,.38);
+      background: rgba(0,255,136,.08);
+      color: var(--green);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .nav-name {
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .nav-sub {
+      margin-top: 3px;
+      color: rgba(0,255,136,.62);
+      font-family: Consolas, monospace;
+      font-size: 10px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+    }
+
+    .nav-links a:hover {
+      color: var(--white);
+    }
+
+    .nav-cta,
+    .btn-pri,
+    .btn-ghost,
+    .btn-mega {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 24px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,255,136,.26);
+      text-decoration: none;
+      cursor: none;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    .nav-cta,
+    .btn-pri,
+    .btn-mega {
+      background: var(--green);
+      color: #001b0f;
+      font-weight: 800;
+      border-color: var(--green);
+    }
+
+    .btn-ghost {
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .nav-cta:hover,
+    .btn-pri:hover,
+    .btn-ghost:hover,
+    .btn-mega:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 34px rgba(0,255,136,.28);
+      border-color: var(--green);
+      color: var(--white);
+    }
+
+    .btn-pri:hover,
+    .btn-mega:hover,
+    .nav-cta:hover {
+      color: #001b0f;
+    }
+
+    section {
+      position: relative;
+      z-index: 1;
+      scroll-snap-align: start;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    #s-hero {
+      min-height: 94vh;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 96px 24px 36px;
+    }
+
+    #hero-canvas,
+    #cta-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: .42;
+    }
+
+    .hero-inner,
+    .cta-inner {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 920px;
+    }
+
+    .micro,
+    .sec-label,
+    .cta-proof,
+    .stat-lbl {
+      color: var(--green);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .hero-title {
+      margin-top: 32px;
+      font-size: 70px;
+      line-height: 1.05;
+      font-weight: 900;
+    }
+
+    .hero-title strong {
+      color: var(--green);
+      text-shadow: 0 0 52px rgba(0,255,136,.28);
+    }
+
+    .hero-sub {
+      margin-top: 24px;
+      max-width: 760px;
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .hero-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      margin-top: 36px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 0;
+      width: min(760px, 100%);
+      margin-top: 44px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(8, 10, 9, .72);
+      overflow: hidden;
+    }
+
+    .stat-item {
+      padding: 18px;
+      border-right: 1px solid rgba(0,255,136,.1);
+    }
+
+    .stat-item:last-child {
+      border-right: 0;
+    }
+
+    .stat-num {
+      display: block;
+      color: var(--white);
+      font-family: Consolas, monospace;
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .stat-loading {
+      min-height: 1em;
+      color: transparent;
+      position: relative;
+    }
+
+    .stat-loading::after {
+      content: "";
+      display: inline-block;
+      width: 46px;
+      height: .8em;
+      border-radius: 6px;
+      background: linear-gradient(90deg, rgba(0,255,136,.08), rgba(0,255,136,.35), rgba(0,255,136,.08));
+      animation: statPulse 1.1s ease-in-out infinite;
+    }
+
+    @keyframes statPulse {
+      0%, 100% { opacity: .38; }
+      50% { opacity: 1; }
+    }
+
+    #s-product {
+      display: grid;
+      grid-template-columns: minmax(320px, .9fr) minmax(0, 1.2fr);
+      align-items: center;
+      gap: 44px;
+      padding: 92px 52px 48px;
+    }
+
+    .prod-title,
+    .cta-title {
+      margin-top: 16px;
+      color: var(--white);
+      font-size: 42px;
+      line-height: 1.16;
+      font-weight: 900;
+    }
+
+    .prod-copy,
+    .cta-copy {
+      margin-top: 18px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .cap-list {
+      list-style: none;
+      margin-top: 30px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .cap-item {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 14px;
+      border: 1px solid rgba(0,255,136,.1);
+      border-radius: 8px;
+      background: rgba(0,255,136,.035);
+    }
+
+    .cap-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: rgba(0,255,136,.1);
+      color: var(--green);
+      font-family: Consolas, monospace;
+      font-weight: 800;
+    }
+
+    .cap-name {
+      color: var(--white);
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .cap-txt {
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .preview-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+      box-shadow: 0 34px 90px rgba(0,0,0,.52);
+    }
+
+    .preview-topbar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(0,255,136,.1);
+      color: var(--green);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .preview-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      background: #0b0d0c;
+    }
+
+    .preview-foot {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid rgba(0,255,136,.1);
+    }
+
+    .mini {
+      padding: 14px;
+      border-right: 1px solid rgba(0,255,136,.1);
+    }
+
+    .mini:last-child {
+      border-right: 0;
+    }
+
+    .mini-v {
+      color: var(--white);
+      font-family: Consolas, monospace;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .mini-l {
+      margin-top: 4px;
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    #s-cta {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 92px 24px 44px;
+    }
+
+    .cta-title {
+      max-width: 760px;
+    }
+
+    .trust-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .trust-row span {
+      border: 1px solid rgba(0,255,136,.14);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--muted);
+      background: rgba(0,255,136,.035);
+      font-size: 13px;
+    }
+
+    .cta-actions {
+      margin-top: 34px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .cta-foot {
+      position: absolute;
+      left: 24px;
+      right: 24px;
+      bottom: 18px;
+      z-index: 2;
+      color: var(--dim);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        cursor: auto;
+      }
+
+      #cur-dot,
+      #cur-ring {
+        display: none;
+      }
+
+      nav {
+        padding: 16px;
+      }
+
+      .nav-links a:not(.nav-cta) {
+        display: none;
+      }
+
+      .hero-title {
+        font-size: 42px;
+      }
+
+      .hero-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stat-item {
+        border-bottom: 1px solid rgba(0,255,136,.1);
+      }
+
+      #s-product {
+        grid-template-columns: 1fr;
+        padding: 84px 20px 36px;
+      }
+
+      .prod-title,
+      .cta-title {
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="cur-dot"></div>
+  <div id="cur-ring"></div>
+
+  <nav id="nav">
+    <div class="nav-logo">
+      <div class="nav-badge">SH</div>
+      <div>
+        <div class="nav-name">Safety Helmet Command Center</div>
+        <div class="nav-sub">FIELD SAFETY TO CLOSED LOOP</div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="#s-product">平台能力</a>
+      <a href="#s-cta">交付路径</a>
+      <a class="nav-cta" href="/app/#/dashboard" data-app-entry="dashboard">进入控制台</a>
+    </div>
+  </nav>
+
+  <section id="s-hero">
+    <canvas id="hero-canvas"></canvas>
+    <div class="hero-inner">
+      <div class="micro">SAFETY HELMET / YOLO / IDENTITY / WORKFLOW</div>
+      <h1 class="hero-title">把未戴安全帽事件<br><strong>压进闭环</strong></h1>
+      <p class="hero-sub">实时检测、证据留存、身份解析、人工复核、通知触达和 Hard Cases 回流，在同一个现场安全终端里完成。</p>
+      <div class="hero-btns">
+        <a class="btn-pri" href="/app/#/dashboard" id="hero-app-entry" data-app-entry="dashboard">进入控制台 -></a>
+        <a class="btn-ghost" href="#s-product">查看能力</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-item"><span class="stat-num stat-loading" id="stat-cameras"></span><span class="stat-lbl">Enabled Cameras</span></div>
+        <div class="stat-item"><span class="stat-num stat-loading" id="stat-alerts"></span><span class="stat-lbl">Today Alerts</span></div>
+        <div class="stat-item"><span class="stat-num stat-loading" id="stat-review"></span><span class="stat-lbl">Review Queue</span></div>
+        <div class="stat-item"><span class="stat-num stat-loading" id="stat-closure"></span><span class="stat-lbl">Closure Rate</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-product">
+    <div>
+      <div class="sec-label">PLATFORM</div>
+      <h2 class="prod-title">从摄像头到复核台，安全事件不再散落。</h2>
+      <p class="prod-copy">围绕工业现场最常见的安全帽合规动作，控制台把模型输出、现场证据、责任归属和处置动作压缩成一个可运行的工作流。</p>
+      <ul class="cap-list">
+        <li class="cap-item"><span class="cap-icon">01</span><span><div class="cap-name">YOLO 违规检测</div><div class="cap-txt">红框标记未戴安全帽，绿框标记合规佩戴。</div></span></li>
+        <li class="cap-item"><span class="cap-icon">02</span><span><div class="cap-name">身份解析</div><div class="cap-txt">工牌 OCR、人脸识别、默认责任人和人工确认串联。</div></span></li>
+        <li class="cap-item"><span class="cap-icon">03</span><span><div class="cap-name">证据与通知</div><div class="cap-txt">截图、视频片段、处置记录和邮件触达统一归档。</div></span></li>
+        <li class="cap-item"><span class="cap-icon">04</span><span><div class="cap-name">Hard Cases 回流</div><div class="cap-txt">误报和难例沉淀为后续模型优化样本。</div></span></li>
+      </ul>
+    </div>
+    <div class="preview-card">
+      <div class="preview-topbar"><span>SAFETY TERMINAL LIVE</span><span>NO HELMET WATCH</span></div>
+      <img src="/app/assets/helmet-vision.png" alt="Safety helmet monitoring console preview">
+      <div class="preview-foot">
+        <div class="mini"><div class="mini-v stat-loading" id="mini-alerts"></div><div class="mini-l">Today alerts</div></div>
+        <div class="mini"><div class="mini-v stat-loading" id="mini-cameras"></div><div class="mini-l">Enabled cameras</div></div>
+        <div class="mini"><div class="mini-v">LOCAL</div><div class="mini-l">Fallback ready</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-cta">
+    <canvas id="cta-canvas"></canvas>
+    <div class="cta-inner">
+      <div class="cta-proof">SUPABASE FIRST / LOCAL FALLBACK / STREAMLIT BACKUP</div>
+      <h2 class="cta-title">现在进入控制台，接管现场安全闭环。</h2>
+      <p class="cta-copy">保留旧 Streamlit 作为回退入口，新控制台以静态前端和 FastAPI API 提供更清晰的交付边界。</p>
+      <div class="trust-row">
+        <span>本地运行可用</span>
+        <span>账号权限分级</span>
+        <span>证据文件受 token 保护</span>
+        <span>摄像头源禁止明文远程地址写回</span>
+      </div>
+      <div class="cta-actions">
+        <a class="btn-mega" href="/app/#/dashboard" id="cta-app-entry" data-app-entry="dashboard">打开 Safety Helmet Terminal -></a>
+      </div>
+    </div>
+    <div class="cta-foot">2026 Safety Helmet Command Center / Industrial field safety console</div>
+  </section>
+
+  <script>
+    const dot = document.getElementById('cur-dot');
+    const ring = document.getElementById('cur-ring');
+    let mx = 0, my = 0, rx = 0, ry = 0;
+    document.addEventListener('mousemove', event => {
+      mx = event.clientX;
+      my = event.clientY;
+      dot.style.left = mx + 'px';
+      dot.style.top = my + 'px';
+    });
+    function cursorLoop() {
+      rx += (mx - rx) * 0.1;
+      ry += (my - ry) * 0.1;
+      ring.style.left = rx + 'px';
+      ring.style.top = ry + 'px';
+      requestAnimationFrame(cursorLoop);
+    }
+    cursorLoop();
+    document.addEventListener('mouseover', event => {
+      document.body.classList.toggle('hov', !!event.target.closest('a,button'));
+    });
+
+    const nav = document.getElementById('nav');
+    document.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 40);
+    }, { passive: true });
+
+    function drawMatrix(canvas, accent) {
+      const ctx = canvas.getContext('2d');
+      let particles = [];
+      function resize() {
+        canvas.width = canvas.clientWidth * devicePixelRatio;
+        canvas.height = canvas.clientHeight * devicePixelRatio;
+        particles = Array.from({ length: 80 }, () => ({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * 0.55 * devicePixelRatio,
+          vy: (Math.random() - 0.5) * 0.55 * devicePixelRatio,
+        }));
+      }
+      function tick() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = devicePixelRatio;
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+          if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+        });
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const a = particles[i], b = particles[j];
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 170 * devicePixelRatio) {
+              ctx.globalAlpha = (1 - dist / (170 * devicePixelRatio)) * 0.28;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = accent;
+        particles.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2 * devicePixelRatio, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        requestAnimationFrame(tick);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+      tick();
+    }
+    drawMatrix(document.getElementById('hero-canvas'), 'rgba(0,255,136,.55)');
+    drawMatrix(document.getElementById('cta-canvas'), 'rgba(0,229,255,.45)');
+
+    const landingApiBase = window.__HELMET_API_BASE_URL__ || (location.port === '9000' ? 'http://127.0.0.1:8000' : location.origin);
+    function setLandingMetric(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('stat-loading');
+      el.textContent = value;
+    }
+    fetch(landingApiBase.replace(/\/+$/, '') + '/api/v1/helmet/public/landing')
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!data) throw new Error('landing metrics unavailable');
+        const m = data.metrics || {};
+        const c = data.camera_summary || {};
+        setLandingMetric('stat-cameras', c.enabled ?? '--');
+        setLandingMetric('stat-alerts', m.today_alerts ?? '--');
+        setLandingMetric('stat-review', m.review_required ?? '--');
+        setLandingMetric('stat-closure', `${Number(m.closure_rate || 0).toFixed(1)}%`);
+        setLandingMetric('mini-alerts', m.today_alerts ?? '--');
+        setLandingMetric('mini-cameras', c.enabled ?? '--');
+      })
+      .catch(() => {
+        ['stat-cameras', 'stat-alerts', 'stat-review', 'stat-closure', 'mini-alerts', 'mini-cameras'].forEach((id) => setLandingMetric(id, '--'));
+      });
+  </script>
+</body>
+</html>

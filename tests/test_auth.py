@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -112,6 +113,40 @@ class AuthServiceTest(unittest.TestCase):
             self.assertEqual(len(accounts), 1)
             self.assertEqual(accounts[0].username, "manager01")
             self.assertEqual(accounts[0].source, "managed_file")
+
+    def test_authenticate_user_reads_managed_file_from_process_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original = {
+                "HELMET_AUTH_USERS_FILE": os.environ.get("HELMET_AUTH_USERS_FILE"),
+                "HELMET_AUTH_USERS_JSON": os.environ.get("HELMET_AUTH_USERS_JSON"),
+                "HELMET_AUTH_ADMIN_USERNAME": os.environ.get("HELMET_AUTH_ADMIN_USERNAME"),
+                "HELMET_AUTH_ADMIN_PASSWORD_HASH": os.environ.get("HELMET_AUTH_ADMIN_PASSWORD_HASH"),
+            }
+            try:
+                os.environ["HELMET_AUTH_USERS_FILE"] = str(Path(temp_dir) / "auth_users.json")
+                os.environ.pop("HELMET_AUTH_USERS_JSON", None)
+                os.environ.pop("HELMET_AUTH_ADMIN_USERNAME", None)
+                os.environ.pop("HELMET_AUTH_ADMIN_PASSWORD_HASH", None)
+                save_managed_auth_accounts(
+                    (
+                        AuthAccount(
+                            username="operator01",
+                            role="admin",
+                            display_name="Operator 01",
+                            password_hash=hash_password("OperatorPass!2026"),
+                        ),
+                    ),
+                    env={"HELMET_AUTH_USERS_FILE": os.environ["HELMET_AUTH_USERS_FILE"]},
+                )
+                identity = authenticate_user("operator01", "OperatorPass!2026")
+                self.assertIsNotNone(identity)
+                self.assertEqual(identity.username, "operator01")
+            finally:
+                for key, value in original.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
 
     def test_login_failures_trigger_and_clear_lockout(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

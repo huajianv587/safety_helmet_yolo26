@@ -24,11 +24,11 @@ INVALID_REMOTE_SOURCE_MARKERS = {
 @dataclass(slots=True, frozen=True)
 class ModelSettings:
     path: str
-    confidence: float = 0.45
+    confidence: float = 0.52
     imgsz: int = 640
     device: str = "cpu"
-    violation_labels: tuple[str, ...] = ("no_helmet", "person")
-    safe_labels: tuple[str, ...] = ("helmet", "hat")
+    violation_labels: tuple[str, ...] = ("no_helmet",)
+    safe_labels: tuple[str, ...] = ("helmet",)
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,7 +37,7 @@ class EventRuleSettings:
     dedupe_seconds: int = 300
     match_distance_pixels: int = 120
     max_track_age_seconds: float = 2.5
-    min_confidence_for_alert: float = 0.5
+    min_confidence_for_alert: float = 0.58
 
 
 @dataclass(slots=True, frozen=True)
@@ -72,8 +72,8 @@ class FaceRecognitionSettings:
     enabled: bool = True
     provider: str = "facenet_pytorch"
     device: str = "cpu"
-    similarity_threshold: float = 0.62
-    review_threshold: float = 0.52
+    similarity_threshold: float = 0.72
+    review_threshold: float = 0.58
     top_k: int = 3
     face_profile_dir: str = "artifacts/identity/faces"
 
@@ -82,7 +82,7 @@ class FaceRecognitionSettings:
 class OcrSettings:
     enabled: bool = True
     provider: str = "none"
-    min_confidence: float = 0.35
+    min_confidence: float = 0.55
     badge_roi_y_start: float = 0.22
     badge_roi_y_end: float = 0.72
     badge_roi_x_margin: float = 0.18
@@ -497,18 +497,18 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         repository_backend=os.getenv("HELMET_STORAGE_BACKEND", raw.get("repository_backend", "supabase")).strip().lower(),
         model=ModelSettings(
             path=str(model_raw.get("path", "models/best.pt")),
-            confidence=float(model_raw.get("confidence", 0.45)),
+            confidence=float(model_raw.get("confidence", 0.52)),
             imgsz=int(model_raw.get("imgsz", 640)),
             device=str(model_raw.get("device", "cpu")),
-            violation_labels=_tuple_from_labels(model_raw.get("violation_labels"), ("no_helmet", "person")),
-            safe_labels=_tuple_from_labels(model_raw.get("safe_labels"), ("helmet", "hat")),
+            violation_labels=_tuple_from_labels(model_raw.get("violation_labels"), ("no_helmet",)),
+            safe_labels=_tuple_from_labels(model_raw.get("safe_labels"), ("helmet",)),
         ),
         event_rules=EventRuleSettings(
             alert_frames=int(event_raw.get("alert_frames", 6)),
             dedupe_seconds=int(event_raw.get("dedupe_seconds", 300)),
             match_distance_pixels=int(event_raw.get("match_distance_pixels", 120)),
             max_track_age_seconds=float(event_raw.get("max_track_age_seconds", 2.5)),
-            min_confidence_for_alert=float(event_raw.get("min_confidence_for_alert", 0.5)),
+            min_confidence_for_alert=float(event_raw.get("min_confidence_for_alert", 0.58)),
         ),
         persistence=PersistenceSettings(
             snapshot_dir=str(persistence_raw.get("snapshot_dir", "artifacts/captures")),
@@ -535,15 +535,15 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             enabled=bool(face_raw.get("enabled", True)),
             provider=str(face_raw.get("provider", "facenet_pytorch")).strip().lower() or "facenet_pytorch",
             device=str(face_raw.get("device", "cpu")),
-            similarity_threshold=float(face_raw.get("similarity_threshold", 0.62)),
-            review_threshold=float(face_raw.get("review_threshold", 0.52)),
+            similarity_threshold=float(face_raw.get("similarity_threshold", 0.72)),
+            review_threshold=float(face_raw.get("review_threshold", 0.58)),
             top_k=max(1, int(face_raw.get("top_k", 3))),
             face_profile_dir=str(face_raw.get("face_profile_dir", "artifacts/identity/faces")),
         ),
         ocr=OcrSettings(
             enabled=bool(ocr_raw.get("enabled", True)),
             provider=str(ocr_raw.get("provider", "none")).strip().lower() or "none",
-            min_confidence=float(ocr_raw.get("min_confidence", 0.35)),
+            min_confidence=float(ocr_raw.get("min_confidence", 0.55)),
             badge_roi_y_start=float(ocr_raw.get("badge_roi_y_start", 0.22)),
             badge_roi_y_end=float(ocr_raw.get("badge_roi_y_end", 0.72)),
             badge_roi_x_margin=float(ocr_raw.get("badge_roi_x_margin", 0.18)),

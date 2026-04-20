@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Safety Helmet Terminal</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <script src="/app/vendor/echarts/echarts.min.js?v=1"></script>
+  <link rel="stylesheet" href="/app/css/app.css?v=1">
+</head>
+<body>
+  <div id="c-dot"></div>
+  <div id="c-ring"></div>
+  <div id="c-pulse"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-scanline" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <aside class="app-sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">SH</div>
+        <div>
+          <div class="logo-name">Safety Helmet</div>
+          <div class="logo-tag">FIELD CONTROL LIVE</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="nav-links"></nav>
+      <div class="sidebar-status">
+        <div class="status-row">
+          <span class="status-dot" id="health-dot"></span>
+          <span id="health-text" class="status-label">Connecting</span>
+        </div>
+        <div class="status-version">Helmet OS 2026</div>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <header class="app-topbar">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="打开导航">MENU</button>
+        <div class="topbar-crumb">
+          <span class="crumb-root">SH</span>
+          <span class="crumb-sep">/</span>
+          <span class="crumb-page" id="page-title">Dashboard</span>
+        </div>
+        <div class="topbar-right" id="header-actions"></div>
+      </header>
+      <main class="app-content" id="app-root"></main>
+    </div>
+  </div>
+  <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+  <div id="toast-container"></div>
+
+  <script>
+    (function() {
+      const dot = document.getElementById('c-dot');
+      const ring = document.getElementById('c-ring');
+      const pulse = document.getElementById('c-pulse');
+      const finePointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+      const interactiveSelector = 'a,button,input,select,textarea,[role=button],.nav-item,.btn,.topbar-chip,.status-filter,.chip-button,.camera-selector,.live-camera-card';
+      const supportsFancyCursor = finePointerQuery.matches;
+      if (!supportsFancyCursor) {
+        document.body.classList.remove('custom-cursor');
+        [dot, ring, pulse].forEach(function(node) {
+          if (node) node.style.display = 'none';
+        });
+        return;
+      }
+      document.body.classList.add('custom-cursor');
+      let mx = 0;
+      let my = 0;
+      let rx = 0;
+      let ry = 0;
+      let pressTimer = 0;
+
+      function movePulse(x, y) {
+        if (!pulse) return;
+        pulse.style.left = x + 'px';
+        pulse.style.top = y + 'px';
+      }
+
+      function burstPulse(x, y) {
+        if (!pulse) return;
+        movePulse(x, y);
+        pulse.classList.remove('burst');
+        void pulse.offsetWidth;
+        pulse.classList.add('burst');
+      }
+
+      document.addEventListener('mousemove', function(event) {
+        mx = event.clientX;
+        my = event.clientY;
+        dot.style.left = mx + 'px';
+        dot.style.top = my + 'px';
+        movePulse(mx, my);
+      });
+      (function lerp() {
+        rx += (mx - rx) * 0.1;
+        ry += (my - ry) * 0.1;
+        ring.style.left = rx + 'px';
+        ring.style.top = ry + 'px';
+        requestAnimationFrame(lerp);
+      })();
+      document.addEventListener('mouseover', function(event) {
+        const interactive = event.target && event.target.closest(interactiveSelector);
+        document.body.classList.toggle('c-hover', !!interactive);
+      });
+      document.addEventListener('mouseout', function(event) {
+        if (event.relatedTarget) return;
+        document.body.classList.remove('c-hover');
+      });
+      document.addEventListener('mousedown', function(event) {
+        if (event.button !== 0) return;
+        document.body.classList.add('c-press');
+        burstPulse(event.clientX, event.clientY);
+        window.clearTimeout(pressTimer);
+        pressTimer = window.setTimeout(function() {
+          document.body.classList.remove('c-press');
+        }, 180);
+      });
+      document.addEventListener('mouseup', function() {
+        document.body.classList.remove('c-press');
+      });
+    })();
+  </script>
+
+  <script src="/app/app-config.js?v=1"></script>
+  <script type="module" src="/app/js/app.js?v=1"></script>
+</body>
+</html>

@@ -272,6 +272,131 @@ class IdentityResolverTest(unittest.TestCase):
             self.assertEqual(result.identity_status, "review_required")
             self.assertEqual(result.identity_source, "camera_default_registry_match")
 
+    def test_face_match_without_margin_stays_review_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry_path = Path(temp_dir) / "persons.json"
+            registry_path.write_text("[]", encoding="utf-8")
+            settings = build_settings(registry_path)
+            object.__setattr__(settings, "face_recognition", FaceRecognitionSettings(
+                enabled=True,
+                similarity_threshold=0.72,
+                review_threshold=0.58,
+            ))
+            resolver = IdentityResolver(settings)
+            person = {
+                "person_id": "person-004",
+                "name": "Chen Liu",
+                "employee_id": "E10004",
+                "department": "Safety",
+                "team": "Shift D",
+                "role": "Inspector",
+                "phone": "13800000004",
+            }
+            resolver.directory = StubDirectory(
+                people_by_id={person["person_id"]: person},
+                people_by_employee_id={person["employee_id"]: person},
+            )
+            resolver.badge_ocr = StubBadgeOcr(
+                BadgeOcrResult(text=None, confidence=None, provider="none", employee_id_hint=None, crop=None)
+            )
+            resolver.face_recognition = StubFaceRecognition(
+                FaceMatchResult(
+                    person=person,
+                    similarity=0.81,
+                    crop=None,
+                    provider="facenet",
+                    review_required=True,
+                    second_best_similarity=0.77,
+                    top1_margin=0.04,
+                )
+            )
+            resolver.llm_fallback = StubLlmFallback()
+
+            camera = CameraSettings(
+                camera_id="cam-face-001",
+                camera_name="Gate Camera",
+                source="0",
+                location="Gate",
+                department="Safety",
+            )
+
+            result = resolver.resolve(camera, build_candidate(), np.zeros((240, 320, 3), dtype=np.uint8))
+            self.assertEqual(result.person_id, "person-004")
+            self.assertEqual(result.identity_status, "review_required")
+            self.assertEqual(result.identity_source, "face_recognition_review")
+
+    def test_badge_face_conflict_forces_review_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry_path = Path(temp_dir) / "persons.json"
+            registry_path.write_text("[]", encoding="utf-8")
+            settings = build_settings(registry_path)
+            object.__setattr__(settings, "face_recognition", FaceRecognitionSettings(
+                enabled=True,
+                similarity_threshold=0.72,
+                review_threshold=0.58,
+            ))
+            object.__setattr__(settings, "ocr", OcrSettings(enabled=True, provider="paddleocr", min_confidence=0.55))
+            resolver = IdentityResolver(settings)
+            badge_person = {
+                "person_id": "person-005",
+                "name": "Badge Person",
+                "employee_id": "E10005",
+                "department": "Safety",
+                "team": "Shift E",
+                "role": "Inspector",
+                "phone": "13800000005",
+            }
+            face_person = {
+                "person_id": "person-006",
+                "name": "Face Person",
+                "employee_id": "E10006",
+                "department": "Safety",
+                "team": "Shift F",
+                "role": "Inspector",
+                "phone": "13800000006",
+            }
+            resolver.directory = StubDirectory(
+                people_by_id={
+                    badge_person["person_id"]: badge_person,
+                    face_person["person_id"]: face_person,
+                },
+                people_by_employee_id={badge_person["employee_id"]: badge_person},
+            )
+            resolver.badge_ocr = StubBadgeOcr(
+                BadgeOcrResult(
+                    text="EMP E10005 Badge Person",
+                    confidence=0.96,
+                    provider="paddleocr",
+                    employee_id_hint="E10005",
+                    crop=None,
+                )
+            )
+            resolver.face_recognition = StubFaceRecognition(
+                FaceMatchResult(
+                    person=face_person,
+                    similarity=0.82,
+                    crop=None,
+                    provider="facenet",
+                    review_required=False,
+                    second_best_similarity=0.60,
+                    top1_margin=0.22,
+                )
+            )
+            resolver.llm_fallback = StubLlmFallback()
+
+            camera = CameraSettings(
+                camera_id="cam-conflict-001",
+                camera_name="Conflict Camera",
+                source="0",
+                location="Gate",
+                department="Safety",
+            )
+
+            result = resolver.resolve(camera, build_candidate(), np.zeros((240, 320, 3), dtype=np.uint8))
+            self.assertEqual(result.identity_status, "review_required")
+            self.assertEqual(result.identity_source, "badge_ocr_face_conflict")
+            self.assertEqual(result.person_id, badge_person["person_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

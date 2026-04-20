@@ -7,5 +7,7 @@
 __pycache__/
 artifacts/
 data/
+node_modules/
+test-results/
 *.pyc
 ~$*

@@ -7,3 +7,7 @@ python-dotenv
 supabase
 httpx
 Pillow
+altair
+fastapi
+uvicorn
+python-multipart

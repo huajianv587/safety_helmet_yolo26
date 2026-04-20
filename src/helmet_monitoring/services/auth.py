@@ -456,11 +456,20 @@ def load_bootstrap_admin_account(env: Mapping[str, str] | None = None) -> AuthAc
     )
 
 
+def _load_managed_accounts_for_env(env: Mapping[str, str] | None) -> tuple[AuthAccount, ...]:
+    # Explicit mini env mappings in tests can intentionally omit the managed
+    # users file. The real process environment should still fall back to the
+    # default managed auth file even when the variable is not explicitly set.
+    if env is not None and env is not os.environ and "HELMET_AUTH_USERS_FILE" not in env:
+        return ()
+    return load_managed_auth_accounts(env=env)
+
+
 def load_auth_accounts(env: Mapping[str, str] | None = None) -> tuple[AuthAccount, ...]:
     raw_env = env if env is not None else os.environ
     by_username: dict[str, AuthAccount] = {}
 
-    for account in load_managed_auth_accounts(env=raw_env):
+    for account in _load_managed_accounts_for_env(raw_env):
         by_username[account.username] = account
 
     raw_users_json = str(raw_env.get("HELMET_AUTH_USERS_JSON", "")).strip()
@@ -492,7 +501,7 @@ def authenticate_user(username: str, password: str, env: Mapping[str, str] | Non
 def auth_configuration_summary(env: Mapping[str, str] | None = None) -> dict[str, object]:
     raw_env = env if env is not None else os.environ
     accounts = load_auth_accounts(raw_env)
-    managed_accounts = load_managed_auth_accounts(env=raw_env)
+    managed_accounts = _load_managed_accounts_for_env(raw_env)
     policy = load_auth_policy(raw_env)
     roles = tuple(sorted({account.role for account in accounts}))
     return {

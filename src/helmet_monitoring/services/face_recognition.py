@@ -29,6 +29,8 @@ class FaceMatchResult:
     crop: object | None
     provider: str
     review_required: bool = False
+    second_best_similarity: float | None = None
+    top1_margin: float | None = None
 
 
 class FaceRecognitionService:
@@ -98,24 +100,32 @@ class FaceRecognitionService:
         embedding, face_crop = self._encode_crop(crop)
         if embedding is None:
             return FaceMatchResult(person=None, similarity=None, crop=None, provider=self.provider)
-        best_profile: FaceProfileRecord | None = None
-        best_similarity: float | None = None
+        ranked_matches: list[tuple[float, FaceProfileRecord]] = []
         for profile in profiles:
             similarity = float(np.dot(embedding, profile.embedding))
-            if best_similarity is None or similarity > best_similarity:
-                best_similarity = similarity
-                best_profile = profile
+            ranked_matches.append((similarity, profile))
+        ranked_matches.sort(key=lambda item: item[0], reverse=True)
+        best_similarity, best_profile = ranked_matches[0] if ranked_matches else (None, None)
         if best_profile is None or best_similarity is None:
             return FaceMatchResult(person=None, similarity=None, crop=face_crop, provider=self.provider)
+        second_best_similarity = ranked_matches[1][0] if len(ranked_matches) > 1 else None
+        top1_margin = (
+            float(best_similarity - second_best_similarity)
+            if second_best_similarity is not None
+            else float(best_similarity)
+        )
         threshold = self.settings.face_recognition.similarity_threshold
         review_threshold = self.settings.face_recognition.review_threshold
-        if best_similarity >= threshold:
+        review_margin = self.settings.governance.review_confidence_margin
+        if best_similarity >= threshold and top1_margin >= review_margin:
             return FaceMatchResult(
                 person=best_profile.person,
                 similarity=round(best_similarity, 4),
                 crop=face_crop,
                 provider=self.provider,
                 review_required=False,
+                second_best_similarity=round(second_best_similarity, 4) if second_best_similarity is not None else None,
+                top1_margin=round(top1_margin, 4),
             )
         return FaceMatchResult(
             person=best_profile.person if best_similarity >= review_threshold else None,
@@ -123,4 +133,6 @@ class FaceRecognitionService:
             crop=face_crop,
             provider=self.provider,
             review_required=best_similarity >= review_threshold,
+            second_best_similarity=round(second_best_similarity, 4) if second_best_similarity is not None else None,
+            top1_margin=round(top1_margin, 4),
         )

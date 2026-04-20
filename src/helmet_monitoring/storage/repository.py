@@ -124,6 +124,19 @@ class AlertRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def insert_visitor_evidence(self, visitor_record: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_visitor_evidence(
+        self,
+        *,
+        camera_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
     def insert_hard_case(self, hard_case_record: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -156,6 +169,7 @@ class LocalAlertRepository(AlertRepository):
         self.cameras_file = self.runtime_dir / "cameras.json"
         self.actions_file = self.runtime_dir / "alert_actions.jsonl"
         self.notifications_file = self.runtime_dir / "notification_logs.jsonl"
+        self.visitor_evidence_file = self.runtime_dir / "visitor_evidence.jsonl"
         self.hard_cases_file = self.runtime_dir / "hard_cases.jsonl"
         self.audit_logs_file = self.runtime_dir / "audit_logs.jsonl"
         self._lock = Lock()
@@ -289,6 +303,22 @@ class LocalAlertRepository(AlertRepository):
     def insert_hard_case(self, hard_case_record: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             return self._append_jsonl(self.hard_cases_file, hard_case_record)
+
+    def insert_visitor_evidence(self, visitor_record: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            return self._append_jsonl(self.visitor_evidence_file, visitor_record)
+
+    def list_visitor_evidence(
+        self,
+        *,
+        camera_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        rows = self._read_jsonl(self.visitor_evidence_file)
+        if camera_id:
+            rows = [row for row in rows if row.get("camera_id") == camera_id]
+        rows.sort(key=lambda item: parse_timestamp(item.get("created_at")), reverse=True)
+        return rows[:limit]
 
     def list_hard_cases(self, *, alert_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         rows = self._read_jsonl(self.hard_cases_file)
@@ -461,6 +491,32 @@ class SupabaseAlertRepository(AlertRepository):
         except Exception as exc:
             if self._is_schema_error(exc):
                 return self.fallback_repo.insert_hard_case(hard_case_record)
+            raise
+
+    def insert_visitor_evidence(self, visitor_record: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self.client.table("visitor_evidence").insert(visitor_record).execute()
+            return visitor_record
+        except Exception as exc:
+            if self._is_schema_error(exc):
+                return self.fallback_repo.insert_visitor_evidence(visitor_record)
+            raise
+
+    def list_visitor_evidence(
+        self,
+        *,
+        camera_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        try:
+            query = self.client.table("visitor_evidence").select("*").order("created_at", desc=True).limit(limit)
+            if camera_id:
+                query = query.eq("camera_id", camera_id)
+            response = query.execute()
+            return response.data or []
+        except Exception as exc:
+            if self._is_schema_error(exc):
+                return self.fallback_repo.list_visitor_evidence(camera_id=camera_id, limit=limit)
             raise
 
     def list_hard_cases(self, *, alert_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
