@@ -1,5 +1,6 @@
 import { api, assetUrl, getAuthUser } from '../api.js?v=1';
 import { pick } from '../i18n.js?v=1';
+import { createRealtimeChannel } from '../realtime.js?v=1';
 import { badge, emptyState, escapeHtml, fmt, fmtTime, markPageReady, metricCard, pageHeader, statusLabel } from '../utils.js?v=1';
 import { toast } from '../components/toast.js?v=1';
 
@@ -17,6 +18,8 @@ let frameRefreshTimer = 0;
 const frameObjectUrls = new Map();
 const frameControllers = new Set();
 const MAX_LIVE_FRAME_FETCHES = 8;
+let realtimeChannel = null;
+let liveReloadTimer = 0;
 
 function selectedCamera() {
   return cameras.find((item) => item.camera_id === selectedCameraId) || cameras[0] || null;
@@ -455,6 +458,14 @@ export async function render(container) {
     cameras = response.items || [];
     if (!cameras.some((item) => item.camera_id === selectedCameraId)) selectedCameraId = cameras[0]?.camera_id || '';
     await redraw(container);
+    realtimeChannel?.close?.();
+    realtimeChannel = createRealtimeChannel('cameras', {
+      onMessage(message) {
+        if (!['camera_status', 'frame_state'].includes(message?.type)) return;
+        if (liveReloadTimer) window.clearTimeout(liveReloadTimer);
+        liveReloadTimer = window.setTimeout(() => render(container), 180);
+      },
+    });
   } catch (error) {
     container.innerHTML = `${shell(`<button class="btn btn-ghost" id="retry-live-cameras">${pick('重试', 'Retry')}</button>`)}${emptyState(pick('摄像头接口暂不可用', 'Live camera API unavailable'), error.message)}`;
     container.querySelector('#retry-live-cameras')?.addEventListener('click', () => render(container));
@@ -466,4 +477,8 @@ export function destroy() {
   stopBrowserPreview();
   stopFrameRefresh();
   clearFrameObjectUrls();
+  realtimeChannel?.close?.();
+  realtimeChannel = null;
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer);
+  liveReloadTimer = 0;
 }

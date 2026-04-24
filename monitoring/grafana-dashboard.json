@@ -1,0 +1,316 @@
+{
+  "dashboard": {
+    "title": "Safety Helmet Monitoring - Performance Dashboard",
+    "tags": ["safety", "monitoring", "performance"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "API Request Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(api_requests_total[5m])",
+            "legendFormat": "{{method}} {{endpoint}} - {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Requests/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "API Response Time (p95)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(api_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{method}} {{endpoint}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "cache_hit_rate",
+            "legendFormat": "{{tier}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "Hit Rate", "max": 1, "min": 0},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Cache Operations",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(cache_hits_total[5m])",
+            "legendFormat": "Hits - {{tier}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(cache_misses_total[5m])",
+            "legendFormat": "Misses - {{tier}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Operations/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Cache Size",
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "cache_size_entries",
+            "legendFormat": "{{tier}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Entries"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Database Query Duration (p95)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{operation}} {{table}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Database Query Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(db_queries_total[5m])",
+            "legendFormat": "{{operation}} {{table}} - {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "qps", "label": "Queries/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Alerts by Status",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "alerts_by_status",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Count"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Alert Creation Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(alerts_created_total[5m])",
+            "legendFormat": "{{camera_id}} - {{alert_type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Alerts/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Task Queue Size",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 32, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "task_queue_size",
+            "legendFormat": "Queue Size",
+            "refId": "A"
+          },
+          {
+            "expr": "task_queue_workers",
+            "legendFormat": "Workers",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Count"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Task Execution Rate",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 32, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(tasks_total[5m])",
+            "legendFormat": "{{task_type}} - {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Tasks/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Task Duration (p95)",
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 32, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(task_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{task_type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 13,
+        "title": "WebSocket Connections",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "websocket_connections_active",
+            "legendFormat": "{{topic}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Connections"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 14,
+        "title": "WebSocket Message Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 40, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(websocket_messages_total[5m])",
+            "legendFormat": "{{topic}} - {{message_type}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Messages/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 15,
+        "title": "System Uptime",
+        "type": "singlestat",
+        "gridPos": {"x": 0, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "application_uptime_seconds",
+            "refId": "A"
+          }
+        ],
+        "format": "dtdurations",
+        "valueName": "current"
+      },
+      {
+        "id": 16,
+        "title": "Total API Requests",
+        "type": "singlestat",
+        "gridPos": {"x": 6, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(api_requests_total)",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current"
+      },
+      {
+        "id": 17,
+        "title": "Total Alerts Created",
+        "type": "singlestat",
+        "gridPos": {"x": 12, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(alerts_created_total)",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current"
+      },
+      {
+        "id": 18,
+        "title": "Active WebSocket Connections",
+        "type": "singlestat",
+        "gridPos": {"x": 18, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(websocket_connections_active)",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current"
+      }
+    ]
+  }
+}

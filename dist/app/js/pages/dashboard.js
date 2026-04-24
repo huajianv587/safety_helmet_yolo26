@@ -1,5 +1,6 @@
 import { api, getAuthUser } from '../api.js?v=1';
 import { pick } from '../i18n.js?v=1';
+import { createRealtimeChannel } from '../realtime.js?v=1';
 import {
   badge,
   emptyState,
@@ -19,6 +20,8 @@ import { toast } from '../components/toast.js?v=1';
 
 let charts = [];
 let visitorExpanded = false;
+let realtimeChannels = [];
+let reloadTimer = 0;
 
 function chartColors() {
   const style = getComputedStyle(document.body);
@@ -290,6 +293,11 @@ async function bindVisitorDesk(container, load) {
 export async function render(container) {
   container.innerHTML = `${shell(topActions())}${emptyState(pick('正在加载总览数据', 'Loading overview data'))}`;
 
+  function scheduleReload() {
+    if (reloadTimer) window.clearTimeout(reloadTimer);
+    reloadTimer = window.setTimeout(() => load(), 180);
+  }
+
   async function load() {
     try {
       const data = await api.platform.overview(7);
@@ -356,10 +364,32 @@ export async function render(container) {
     }
   }
 
+  realtimeChannels.forEach((channel) => channel?.close?.());
+  realtimeChannels = [
+    createRealtimeChannel('dashboard', {
+      onMessage(message) {
+        if (['overview_snapshot', 'metrics_update', 'queue_update'].includes(message?.type)) scheduleReload();
+      },
+    }),
+    createRealtimeChannel('alerts', {
+      onMessage(message) {
+        if (['alert_created', 'alert_updated'].includes(message?.type)) scheduleReload();
+      },
+    }),
+    createRealtimeChannel('cameras', {
+      onMessage(message) {
+        if (['camera_status', 'frame_state'].includes(message?.type)) scheduleReload();
+      },
+    }),
+  ];
   await load();
 }
 
 export function destroy() {
   charts.forEach((item) => item?.destroy?.());
   charts = [];
+  realtimeChannels.forEach((channel) => channel?.close?.());
+  realtimeChannels = [];
+  if (reloadTimer) window.clearTimeout(reloadTimer);
+  reloadTimer = 0;
 }

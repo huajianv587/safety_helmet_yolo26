@@ -13,8 +13,62 @@ from urllib.parse import quote
 
 import altair as alt
 import pandas as pd
-import streamlit as st
-import streamlit.components.v1 as components
+from types import SimpleNamespace
+
+try:
+    import streamlit as st
+    import streamlit.components.v1 as components
+except ImportError:  # pragma: no cover - exercised in test environments without streamlit
+    class _StreamlitSidebarStub:
+        def markdown(self, *_args, **_kwargs):
+            return None
+
+        def button(self, *_args, **_kwargs):
+            return False
+
+    class _StreamlitContextStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __getattr__(self, _name):
+            return lambda *_args, **_kwargs: None
+
+    class _StreamlitStub:
+        def __init__(self) -> None:
+            self.sidebar = _StreamlitSidebarStub()
+            self.session_state = {}
+
+        def cache_resource(self, func=None, **_kwargs):
+            if func is None:
+                return lambda inner: inner
+            return func
+
+        cache_data = cache_resource
+
+        def columns(self, spec):
+            if isinstance(spec, int):
+                count = spec
+            else:
+                count = len(spec)
+            return tuple(_StreamlitContextStub() for _ in range(max(1, count)))
+
+        def container(self, *_, **__):
+            return _StreamlitContextStub()
+
+        def form(self, *_args, **_kwargs):
+            return _StreamlitContextStub()
+
+        def expander(self, *_args, **_kwargs):
+            return _StreamlitContextStub()
+
+        def __getattr__(self, _name):
+            return lambda *_args, **_kwargs: None
+
+    st = _StreamlitStub()
+    components = SimpleNamespace(html=lambda *_args, **_kwargs: None)
 
 
 REPO_ROOT = Path(__file__).resolve().parent

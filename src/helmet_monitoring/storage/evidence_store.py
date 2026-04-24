@@ -77,6 +77,17 @@ class EvidenceStore:
         parts = [part for part in [prefix, safe_category, day_key, camera_id, filename] if part]
         return "/".join(parts)
 
+    def remote_object_path(
+        self,
+        camera_id: str,
+        artifact_id: str,
+        created_at: datetime,
+        *,
+        category: str,
+        extension: str,
+    ) -> str:
+        return self._remote_object_path(camera_id, artifact_id, created_at, category, extension)
+
     def _build_access_url(self, object_path: str) -> str | None:
         if self.client is None:
             return None
@@ -109,6 +120,9 @@ class EvidenceStore:
             print(f"[evidence] Upload failed, keeping local artifact only: {exc}")
             return None
 
+    def upload_artifact(self, local_path: str | Path, object_path: str, content_type: str) -> str | None:
+        return self._upload_local_file(Path(local_path), object_path, content_type)
+
     def _cleanup_local_copy(self, local_path: Path, access_url: str | None) -> None:
         if not self.settings.persistence.keep_local_copy and access_url:
             try:
@@ -128,10 +142,7 @@ class EvidenceStore:
         local_path = self._local_path(camera_id, artifact_id, created_at, category, ".jpg")
         if not write_image(local_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
             raise RuntimeError(f"Unable to write image artifact: {local_path}")
-        object_path = self._remote_object_path(camera_id, artifact_id, created_at, category, ".jpg")
-        access_url = self._upload_local_file(local_path, object_path, "image/jpeg")
-        self._cleanup_local_copy(local_path, access_url)
-        return str(local_path), access_url
+        return str(local_path), None
 
     def save_bytes(
         self,
@@ -146,10 +157,25 @@ class EvidenceStore:
     ) -> Tuple[str, str | None]:
         local_path = self._local_path(camera_id, artifact_id, created_at, category, extension)
         local_path.write_bytes(file_bytes)
-        object_path = self._remote_object_path(camera_id, artifact_id, created_at, category, extension)
-        access_url = self._upload_local_file(local_path, object_path, content_type)
-        self._cleanup_local_copy(local_path, access_url)
-        return str(local_path), access_url
+        return str(local_path), None
+
+    def save_existing_file(
+        self,
+        camera_id: str,
+        local_path: str | Path,
+        artifact_id: str,
+        created_at: datetime,
+        *,
+        category: str,
+        extension: str,
+        content_type: str,
+    ) -> Tuple[str, str | None]:
+        source_path = Path(local_path)
+        final_path = self._local_path(camera_id, artifact_id, created_at, category, extension)
+        if source_path.resolve() != final_path.resolve():
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.replace(final_path)
+        return str(final_path), None
 
     def save_video_frames(
         self,
@@ -162,10 +188,12 @@ class EvidenceStore:
         fps: float = 12.0,
         codec: str = "mp4v",
     ) -> Tuple[str, str | None]:
-        frame_list = list(frames)
-        if not frame_list:
+        iterator = iter(frames)
+        try:
+            first_frame = next(iterator)
+        except StopIteration:
             return "", None
-        height, width = frame_list[0].shape[:2]
+        height, width = first_frame.shape[:2]
         local_path = self._local_path(camera_id, artifact_id, created_at, category, ".mp4")
         writer = cv2.VideoWriter(
             str(local_path),
@@ -174,12 +202,9 @@ class EvidenceStore:
             (width, height),
         )
         try:
-            for frame in frame_list:
+            writer.write(first_frame)
+            for frame in iterator:
                 writer.write(frame)
         finally:
             writer.release()
-
-        object_path = self._remote_object_path(camera_id, artifact_id, created_at, category, ".mp4")
-        access_url = self._upload_local_file(local_path, object_path, "video/mp4")
-        self._cleanup_local_copy(local_path, access_url)
-        return str(local_path), access_url
+        return str(local_path), None

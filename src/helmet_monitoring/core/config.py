@@ -27,6 +27,10 @@ class ModelSettings:
     confidence: float = 0.52
     imgsz: int = 640
     device: str = "cpu"
+    backend: str = "auto"
+    onnx_path: str = ""
+    warmup_runs: int = 1
+    batch_size: int = 1
     violation_labels: tuple[str, ...] = ("no_helmet",)
     safe_labels: tuple[str, ...] = ("helmet",)
 
@@ -57,6 +61,9 @@ class MonitoringSettings:
     camera_retry_seconds: float = 5.0
     heartbeat_interval_seconds: float = 10.0
     max_frames: int = 0
+    keyframe_interval: int = 3
+    inference_workers: int = 1
+    postprocess_workers: int = 1
 
 
 @dataclass(slots=True, frozen=True)
@@ -117,6 +124,8 @@ class GovernanceSettings:
     night_end_hour: int = 6
     night_confidence_boost: float = 0.08
     review_confidence_margin: float = 0.08
+    camera_overrides: dict[str, dict[str, float | int | str | bool]] = field(default_factory=dict)
+    site_overrides: dict[str, dict[str, float | int | str | bool]] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
@@ -183,6 +192,17 @@ class SupabaseSettings:
 
 
 @dataclass(slots=True, frozen=True)
+class QualityGateSettings:
+    precision_threshold: float = 0.82
+    recall_threshold: float = 0.75
+    f1_threshold: float = 0.78
+    pilot_replay_min_samples: int = 20
+    mean_latency_ms_threshold: float = 250.0
+    p95_latency_ms_threshold: float = 350.0
+    site_holdout_required: bool = True
+
+
+@dataclass(slots=True, frozen=True)
 class AppSettings:
     repository_backend: str
     model: ModelSettings
@@ -199,6 +219,7 @@ class AppSettings:
     notifications: NotificationSettings
     security: SecuritySettings
     supabase: SupabaseSettings
+    quality: QualityGateSettings = field(default_factory=QualityGateSettings)
     cameras: tuple[CameraSettings, ...] = field(default_factory=tuple)
     config_path: Path = field(default=REPO_ROOT / "configs" / "runtime.json")
 
@@ -332,6 +353,27 @@ def _parse_ignore_zones(raw_value: dict[str, Any] | None) -> dict[str, tuple[dic
                 }
             )
         output[str(camera_id)] = tuple(zone_records)
+    return output
+
+
+def _parse_governance_overrides(raw_value: dict[str, Any] | None) -> dict[str, dict[str, float | int | str | bool]]:
+    if not raw_value or not isinstance(raw_value, dict):
+        return {}
+    output: dict[str, dict[str, float | int | str | bool]] = {}
+    for scope_key, payload in raw_value.items():
+        if not isinstance(payload, dict):
+            continue
+        normalized: dict[str, float | int | str | bool] = {}
+        for key, value in payload.items():
+            if isinstance(value, bool):
+                normalized[str(key)] = value
+            elif isinstance(value, int):
+                normalized[str(key)] = int(value)
+            elif isinstance(value, float):
+                normalized[str(key)] = float(value)
+            elif value is not None:
+                normalized[str(key)] = str(value)
+        output[str(scope_key)] = normalized
     return output
 
 
@@ -489,6 +531,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
     clip_raw = raw.get("clip", {})
     notification_raw = raw.get("notifications", {})
     security_raw = raw.get("security", {})
+    quality_raw = raw.get("quality", {})
     cameras_raw = _apply_camera_source_preference(_merge_env_stream_cameras(raw.get("cameras", [])))
 
     default_recipients = os.getenv("ALERT_EMAIL_RECIPIENTS", "")
@@ -500,6 +543,10 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             confidence=float(model_raw.get("confidence", 0.52)),
             imgsz=int(model_raw.get("imgsz", 640)),
             device=str(model_raw.get("device", "cpu")),
+            backend=str(model_raw.get("backend", "auto")).strip().lower() or "auto",
+            onnx_path=str(model_raw.get("onnx_path", "")),
+            warmup_runs=max(0, int(model_raw.get("warmup_runs", 1))),
+            batch_size=max(1, int(model_raw.get("batch_size", 1))),
             violation_labels=_tuple_from_labels(model_raw.get("violation_labels"), ("no_helmet",)),
             safe_labels=_tuple_from_labels(model_raw.get("safe_labels"), ("helmet",)),
         ),
@@ -524,6 +571,9 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             camera_retry_seconds=float(monitoring_raw.get("camera_retry_seconds", 5.0)),
             heartbeat_interval_seconds=float(monitoring_raw.get("heartbeat_interval_seconds", 10.0)),
             max_frames=int(monitoring_raw.get("max_frames", 0)),
+            keyframe_interval=max(1, int(monitoring_raw.get("keyframe_interval", 3))),
+            inference_workers=max(1, int(monitoring_raw.get("inference_workers", 1))),
+            postprocess_workers=max(1, int(monitoring_raw.get("postprocess_workers", 1))),
         ),
         identity=IdentitySettings(
             provider=str(identity_raw.get("provider", "hybrid")).strip().lower() or "hybrid",
@@ -572,6 +622,8 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             night_end_hour=int(governance_raw.get("night_end_hour", 6)),
             night_confidence_boost=float(governance_raw.get("night_confidence_boost", 0.08)),
             review_confidence_margin=float(governance_raw.get("review_confidence_margin", 0.08)),
+            camera_overrides=_parse_governance_overrides(governance_raw.get("camera_overrides")),
+            site_overrides=_parse_governance_overrides(governance_raw.get("site_overrides")),
         ),
         clip=ClipSettings(
             enabled=bool(clip_raw.get("enabled", True)),
@@ -604,6 +656,15 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             url=_normalize_supabase_url(os.getenv("SUPABASE_URL", "")),
             service_role_key=_normalize_env_text(os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")),
             storage_bucket=_normalize_env_text(os.getenv("SUPABASE_STORAGE_BUCKET", "helmet-alerts")) or "helmet-alerts",
+        ),
+        quality=QualityGateSettings(
+            precision_threshold=float(quality_raw.get("precision_threshold", 0.82)),
+            recall_threshold=float(quality_raw.get("recall_threshold", 0.75)),
+            f1_threshold=float(quality_raw.get("f1_threshold", 0.78)),
+            pilot_replay_min_samples=max(1, int(quality_raw.get("pilot_replay_min_samples", 20))),
+            mean_latency_ms_threshold=float(quality_raw.get("mean_latency_ms_threshold", 250.0)),
+            p95_latency_ms_threshold=float(quality_raw.get("p95_latency_ms_threshold", 350.0)),
+            site_holdout_required=bool(quality_raw.get("site_holdout_required", True)),
         ),
         cameras=tuple(
             CameraSettings(

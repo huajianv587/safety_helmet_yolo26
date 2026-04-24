@@ -1,0 +1,672 @@
+E:\项目夹\safety_helmet_yolo26\src\helmet_monitoring\api\app.py:2457: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+E:\项目夹\safety_helmet_yolo26\src\helmet_monitoring\api\app.py:2467: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("shutdown")
+INFO:     Started server process [21312]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8112 (Press CTRL+C to quit)
+Cache warmup: 2 caches preloaded
+INFO:     127.0.0.1:58487 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49767 - "GET /api/v1/helmet/platform/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62053 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51347 - "GET /api/v1/helmet/platform-overview HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49302 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:49306 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:49334 - "GET /api/v1/helmet/cameras HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49335 - "GET /api/v1/helmet/platform/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65173 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:65179 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:61838 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60132 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60140 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60143 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60147 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60160 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:60162 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:63026 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:57225 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:52948 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:54351 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:56661 - "WebSocket /ws" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
+INFO:     127.0.0.1:62650 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65271 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:59353 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50904 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50217 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63700 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMTQwNzAsImlhdCI6MTc3NzAyNzY3MCwibm9uY2UiOiJOdzhCSDhiSHREYyIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.ZIzhaypEEJk1v9TSUUohvj96f-0chF6AG_uAahCf69U HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:63967 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:60723 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55807 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65224 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53500 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51511 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMTQxNzksImlhdCI6MTc3NzAyNzc3OSwibm9uY2UiOiI0THQ5N2NIZTh0ayIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.QEWWkIeFQRTNjBuD2KkJClEzyGlGzVi5xf9CMa3Hb9E HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:0 - "GET /main.a0e43762a3c2b964c832.hot-update.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52033 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62515 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:62519 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:62521 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:61784 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59743 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52033 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58742 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53575 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:64668 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMTQyOTMsImlhdCI6MTc3NzAyNzg5Mywibm9uY2UiOiIwMENnZnRxLUFGUSIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.r5C7R4fbp3cINGc8KKHtSg8PkHUCse1CQ5Q_h-JvE2s HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61784 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51807 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMTQyOTQsImlhdCI6MTc3NzAyNzg5NCwibm9uY2UiOiJudFJaTGgwQ2N4byIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.FcSdjIupmgeQKHAbCr2ZGamJDPQNY3yI6Ve4cmaCCQA HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62400 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62400 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62735 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:57004 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:55891 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50648 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMTQyOTQsImlhdCI6MTc3NzAyNzg5NCwibm9uY2UiOiJudFJaTGgwQ2N4byIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.FcSdjIupmgeQKHAbCr2ZGamJDPQNY3yI6Ve4cmaCCQA HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:62516 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62434 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62491 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64666 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62492 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59688 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59428 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59489 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59429 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65013 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61778 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52168 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62746 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61779 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57538 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58932 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62694 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60555 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52313 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49793 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53052 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52974 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59491 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58513 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52975 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50210 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61119 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61120 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50317 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52646 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55035 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52647 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65123 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50249 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61338 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56136 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62182 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61310 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59738 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61311 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56524 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56493 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56525 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62943 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61465 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52497 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54802 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61466 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61740 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56369 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50222 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53565 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61306 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50223 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53959 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55344 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63432 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59236 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63433 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59070 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49852 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49853 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56886 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58750 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52793 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52794 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54727 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65352 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50681 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50683 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49707 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63617 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57409 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57411 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65048 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59941 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52840 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52842 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57378 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49807 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49808 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57417 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51241 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49293 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49294 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63684 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58499 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52185 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52186 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63145 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54361 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60695 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60696 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62675 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63229 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53419 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53420 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50717 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57804 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53951 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53952 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59729 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50160 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57673 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57674 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56720 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49670 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57497 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57498 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58007 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63763 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54262 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54263 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55729 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62442 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49776 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49777 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62145 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54235 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51632 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51633 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58695 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57145 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57371 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56065 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51338 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62248 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62249 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59859 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55953 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59871 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59872 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51759 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53330 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52851 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52852 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54515 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58898 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62816 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62817 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56725 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52264 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64742 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64743 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55021 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65165 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57252 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57253 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55653 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59168 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53879 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53880 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65003 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56509 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63291 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63292 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54797 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53209 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56991 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56992 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49798 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55484 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58969 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60287 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53473 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62557 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62556 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65192 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65193 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65194 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53430 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51236 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52069 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52070 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55543 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54132 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54133 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64547 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49673 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52131 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49847 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49846 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58563 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58562 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58564 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62502 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65295 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56993 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65375 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65374 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52030 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58073 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52031 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59941 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54435 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60179 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52702 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52701 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62800 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51728 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62801 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56261 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61049 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64553 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61051 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57558 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62102 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61391 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61390 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49258 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62356 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49259 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49871 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57295 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52134 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52135 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56641 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51938 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55099 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51939 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50552 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58223 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60776 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60777 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54253 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50605 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54805 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54806 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51234 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57296 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58970 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50741 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58971 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62172 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55577 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62173 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54351 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57524 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64692 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64693 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51386 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62928 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52127 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51523 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52128 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59421 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58534 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55903 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55901 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61751 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57884 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61752 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55250 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60657 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60658 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60659 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55263 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58526 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54019 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58527 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62557 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50941 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50942 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49732 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62206 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62207 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59462 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55441 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56120 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56121 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55295 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65217 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64303 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63785 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63673 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63674 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50431 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50585 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60311 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54685 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62447 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60628 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60629 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54752 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59648 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52878 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52879 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64142 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50861 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49709 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54967 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64298 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49769 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49770 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54786 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61315 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57035 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57036 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51816 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63759 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60609 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60610 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52521 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63417 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63418 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64547 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54646 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62202 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62203 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63847 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56791 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61269 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61270 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51482 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49174 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55889 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55890 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64609 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49791 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50067 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50068 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60759 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57184 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62252 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62253 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51097 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49689 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59442 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59443 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51182 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55374 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63294 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63295 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59493 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54210 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58177 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58178 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64657 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58745 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52810 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52811 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63937 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57380 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57381 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51483 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59800 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52452 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52453 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63260 - "GET /health HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:49906 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60028 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60452 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52310 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64428 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64188 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58701 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62993 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61112 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52636 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49309 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62932 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63522 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65407 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61723 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55044 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50767 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62089 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63721 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59100 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49907 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50061 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59565 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57077 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63459 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50390 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49274 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55482 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61496 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51223 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51225 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:51229 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:51231 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:51226 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51226 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58757 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58759 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58761 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58763 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMjU0ODksImlhdCI6MTc3NzAzOTA4OSwibm9uY2UiOiJpMnBUZU1XczM2byIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.kAtoRQrCr0C5tMROpq9LgqjKzixaM4WgsfGXP-q_a1k HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:51226 - "GET /api/v1/helmet/alerts?days=30&limit=10&offset=0&mode=compact&include_media=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51226 - "GET /api/v1/helmet/alerts/b3a8224b61434553aa63fc40fc364876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51226 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58769 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58771 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58773 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:51228 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64574 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59503 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52099 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49784 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60002 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55187 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53656 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53406 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51052 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58737 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49927 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60165 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55275 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49765 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57801 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60091 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50320 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51441 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64889 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60145 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62264 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51660 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51355 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65410 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49671 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63774 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51143 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53563 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52741 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52743 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52746 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52749 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52741 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52756 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMjY0MjcsImlhdCI6MTc3NzA0MDAyNywibm9uY2UiOiJjdVdOcFdLQnp0RSIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.44rhUVg-WdVR2aW694nawsqJwn48Q4Zt6BY7EjKqcCw HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56151 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52744 - "GET /health HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/alerts?days=30&limit=10&offset=0&mode=compact&include_media=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/alerts/b3a8224b61434553aa63fc40fc364876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56119 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/cameras/live HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040074349 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56128 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040074349 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "GET /api/v1/helmet/cameras/cam-rtsp-001/frame.jpg?t=1777040074349 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56374 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /api/v1/helmet/cameras/cam-1/frame.jpg?t=1777040074350 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040079351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/cameras/cam-rtsp-001/frame.jpg?t=1777040079351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040079351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56127 - "GET /api/v1/helmet/cameras/cam-1/frame.jpg?t=1777040079352 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56127 - "OPTIONS /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56127 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040084351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52750 - "GET /api/v1/helmet/cameras/cam-rtsp-001/frame.jpg?t=1777040084351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52750 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "GET /api/v1/helmet/cameras/cam-1/frame.jpg?t=1777040084351 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040084350 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56126 - "POST /api/v1/helmet/cameras/cam-local-001/browser-infer HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:60710 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:60712 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:60714 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56126 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60718 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMjY0ODksImlhdCI6MTc3NzA0MDA4OSwibm9uY2UiOiJJMFBCa0V6a0VLTSIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxjYXB0dXJlc1xcdmlzaXRvcl9ldmlkZW5jZVxcMjAyNjA0MjRcXHZpc2l0b3ItZGVza1xcMTA0NjQxX3Zpc2l0b3ItZDFkYjk2ZDMwYzcwNGI4Ny5qcGciLCJ0eXAiOiJtZWRpYSJ9.gwPXKWxq2DbZ4UHJJ8K4sCqIkJYu9ozV5_ivNs0On1c HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+INFO:     connection closed
+INFO:     127.0.0.1:57764 - "GET /api/v1/helmet/hard-cases?limit=50&offset=0&include_media=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60719 - "GET /api/v1/helmet/media/h1.eyJleHAiOjE3NzcxMjY0OTgsImlhdCI6MTc3NzA0MDA5OCwibm9uY2UiOiJwNEVTTWM0WXp3VSIsInBhdGgiOiJFOlxc6aG555uu5aS5XFxzYWZldHlfaGVsbWV0X3lvbG8yNlxcYXJ0aWZhY3RzXFxxYVxcY2FwdHVyZXNcXGFsZXJ0c1xcMjAyNjA0MTJcXGNhbS1sb2NhbC0wMDFcXDA0MDcyNl9kNDVlOGM2YjZkNWU0NjA5OWRmYWMyYmU5Y2I4MzJkOS5qcGciLCJ0eXAiOiJtZWRpYSJ9.-lCDQhBpHSAF_6WGGG2tQ0HzU5L-mPX-pXBpwCB_rYE HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57766 - "GET /api/v1/helmet/reports/rows?days=30&limit=20&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57764 - "GET /api/v1/helmet/reports/summary?days=30&preview_limit=20&include_rows=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56906 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65239 - "GET /api/v1/helmet/cameras/live HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65239 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040109276 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65257 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65251 - "GET /api/v1/helmet/cameras/cam-local-001/frame.jpg?t=1777040109276 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65239 - "GET /api/v1/helmet/cameras/cam-rtsp-001/frame.jpg?t=1777040109276 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65255 - "GET /api/v1/helmet/cameras/cam-1/frame.jpg?t=1777040109276 HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:65255 - "GET /api/v1/helmet/alerts?days=30&limit=10&offset=0&mode=compact&include_media=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65255 - "GET /api/v1/helmet/alerts/b3a8224b61434553aa63fc40fc364876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65357 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65255 - "GET /health HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     127.0.0.1:65255 - "GET /api/v1/helmet/platform/overview?days=7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65361 - "WebSocket /ws/dashboard" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65363 - "WebSocket /ws/alerts" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65365 - "WebSocket /ws/cameras" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:65235 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65256 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57331 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61900 - "GET /health HTTP/1.1" 200 OK

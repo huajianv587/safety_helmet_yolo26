@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -89,6 +90,13 @@ class RepositoryTest(unittest.TestCase):
             with patch("helmet_monitoring.storage.repository.SupabaseAlertRepository", BrokenSupabaseRepository):
                 with self.assertRaisesRegex(RuntimeError, "Supabase backend requested but is unavailable"):
                     build_repository(settings, require_requested_backend=True)
+
+    def test_build_repository_honors_allow_local_fallback_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = build_settings(Path(temp_dir), supabase=SupabaseSettings())
+            with patch.dict(os.environ, {"ALLOW_LOCAL_FALLBACK": "false"}, clear=False):
+                with self.assertRaisesRegex(RuntimeError, "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY"):
+                    build_repository(settings)
 
 
 if __name__ == "__main__":

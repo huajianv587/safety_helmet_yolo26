@@ -72,7 +72,7 @@ class BrowserInferenceEngine:
         with self._detector_lock:
             if self._detector is None:
                 preview_tracking = replace(self.settings.tracking, enabled=False)
-                self._detector = HelmetDetector(self.settings.model, preview_tracking)
+                self._detector = HelmetDetector(self.settings.model, preview_tracking, self.settings.monitoring)
         return self._detector
 
     def detect(self, camera_id: str, payload: bytes) -> dict[str, object]:

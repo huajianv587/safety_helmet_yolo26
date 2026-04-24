@@ -102,6 +102,7 @@ class NotifierTest(unittest.TestCase):
 
             notifier.simulate_alert_email(build_alert(), ("ops@example.com",), reason="smoke_product")
             logs = repository.list_notification_logs(limit=10)
+            repository.close()
 
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0]["status"], "dry_run")
@@ -126,6 +127,7 @@ class NotifierTest(unittest.TestCase):
 
             notifier.send_alert_email(build_alert(), ("ops@example.com",))
             logs = repository.list_notification_logs(limit=10)
+            repository.close()
 
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0]["status"], "skipped")

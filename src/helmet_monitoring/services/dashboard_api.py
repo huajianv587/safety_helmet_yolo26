@@ -303,21 +303,18 @@ def build_overview_payload(
     since = date_floor(days, now=current)
     raw_cameras = repository.list_cameras()
     monitor_runtime, cameras = merge_live_cameras(settings, raw_cameras)
-    alerts = sort_alerts(repository.list_alerts(limit=1000, since=since))
-    filtered = filter_alerts(alerts, date_from=since)
-    todays_alerts = filter_alerts(filtered, date_from=start_of_day(current))
+    aggregates = repository.get_dashboard_aggregates(days=days, now=current, preview_limit=max(recent_limit * 4, evidence_limit * 4, 24))
+    filtered = sort_alerts(list(aggregates.get("recent_alerts") or []))
+    recent_page = repository.list_alerts_page(limit=max(recent_limit * 4, evidence_limit * 4, 24), since=since)
+    recent_items = sort_alerts(list(recent_page.get("items") or []))
+    todays_alerts = filter_alerts(recent_items, date_from=start_of_day(current))
     visitor_records = filter_alerts(
         repository.list_visitor_evidence(limit=100),
         date_from=since,
     )
-    today_summary = summarize_alerts(todays_alerts)
-    all_summary = summarize_alerts(filtered)
-    closure_rate = 0.0
-    if filtered:
-        closure_rate = round((all_summary["closed"] / len(filtered)) * 100, 2)
-
-    latest_event = filtered[0].get("event_no") or filtered[0].get("alert_id") if filtered else "--"
-    top_department = department_ranking(todays_alerts, limit=1)
+    metrics = dict(aggregates.get("metrics") or {})
+    latest_event = recent_items[0].get("event_no") or recent_items[0].get("alert_id") if recent_items else "--"
+    top_department = (aggregates.get("department_ranking") or [])[:1]
 
     return {
         "generated_at": current.isoformat(),
@@ -325,28 +322,33 @@ def build_overview_payload(
         "monitor_runtime": monitor_runtime,
         "window_days": max(1, int(days)),
         "metrics": {
-            "today_alerts": today_summary["total"],
-            "pending_queue": today_summary["pending"] + today_summary["assigned"],
-            "review_required": today_summary["review_required"],
-            "resolved_identity": today_summary["resolved_identity"],
-            "false_positive": today_summary["false_positive"],
-            "closure_rate": closure_rate,
+            "today_alerts": int(metrics.get("today_alerts") or 0),
+            "pending_queue": int(metrics.get("pending_queue") or 0),
+            "review_required": int(metrics.get("review_required") or 0),
+            "resolved_identity": int(metrics.get("resolved_identity") or 0),
+            "false_positive": int(metrics.get("false_positive") or 0),
+            "closure_rate": float(metrics.get("closure_rate") or 0.0),
         },
         "signals": {
-            "remediated_today": today_summary["remediated"],
-            "focus_department": top_department[0]["department"] if top_department else "--",
+            "remediated_today": summarize_alerts(todays_alerts)["remediated"],
+            "focus_department": top_department[0].get("department") if top_department else "--",
             "latest_event": latest_event,
             "data_backend": repository.backend_name.upper(),
         },
         "camera_summary": camera_summary(settings, cameras, now=current),
-        "hourly_trend": hourly_trend(todays_alerts),
-        "department_ranking": department_ranking(todays_alerts),
-        "hotspots": mixed_hotspots(todays_alerts, filtered),
-        "status_mix": status_mix(filtered),
-        "recent_alerts": filtered[: max(1, int(recent_limit))],
+        "hourly_trend": list(aggregates.get("hourly_trend") or hourly_trend(todays_alerts)),
+        "department_ranking": list(aggregates.get("department_ranking") or department_ranking(todays_alerts)),
+        "hotspots": {
+            "mode": "today" if todays_alerts else "fallback_7d",
+            "departments": list((aggregates.get("department_ranking") or [])[:5]),
+            "zones": list((aggregates.get("zone_ranking") or [])[:5]),
+            "cameras": list((aggregates.get("camera_ranking") or [])[:5]),
+        },
+        "status_mix": list(aggregates.get("status_mix") or status_mix(recent_items)),
+        "recent_alerts": recent_items[: max(1, int(recent_limit))],
         "evidence_alerts": [
             item
-            for item in filtered
+            for item in recent_items
             if item.get("snapshot_path") or item.get("snapshot_url")
         ][: max(1, int(evidence_limit))],
         "visitor_evidence_summary": visitor_evidence_summary(visitor_records, limit=evidence_limit),

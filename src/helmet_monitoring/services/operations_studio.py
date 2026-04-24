@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -36,6 +38,7 @@ from helmet_monitoring.services.person_directory import PersonDirectory
 from helmet_monitoring.services.readiness import collect_readiness_report
 from helmet_monitoring.services.video_sources import is_local_device_source
 from helmet_monitoring.storage.repository import AlertRepository, parse_timestamp
+from helmet_monitoring.tasks.task_queue import get_queue_stats
 
 try:
     from supabase import create_client
@@ -1211,7 +1214,12 @@ def _parse_results_metrics(results_csv: Path) -> dict[str, Any]:
     }
 
 
-def _detector_quality_state(metrics: dict[str, Any], *, hard_cases_total: int) -> tuple[str, list[str]]:
+def _detector_quality_state(
+    metrics: dict[str, Any],
+    *,
+    settings: AppSettings,
+    hard_cases_total: int,
+) -> tuple[str, list[str]]:
     notes: list[str] = []
     precision = _float_or_none(metrics.get("precision"))
     recall = _float_or_none(metrics.get("recall"))
@@ -1220,12 +1228,21 @@ def _detector_quality_state(metrics: dict[str, Any], *, hard_cases_total: int) -
         return "review_required", [
             "Site holdout metrics are missing. Freeze train / val / site_holdout before running another evaluation."
         ]
-    if precision < 0.75 or recall < 0.65 or (f1 is not None and f1 < 0.72):
+    if (
+        precision < max(0.0, float(settings.quality.precision_threshold) - 0.07)
+        or recall < max(0.0, float(settings.quality.recall_threshold) - 0.10)
+        or (f1 is not None and f1 < max(0.0, float(settings.quality.f1_threshold) - 0.06))
+    ):
         notes.append("Detector metrics are still below the balanced promotion gate. Retrain on the site benchmark and replay thresholds first.")
         return "invalid", notes
     if hard_cases_total > 12:
         notes.append("The hard-case pool is still large. Keep collecting night, backlight, and occlusion samples.")
-    if precision >= 0.82 and recall >= 0.75 and (f1 or 0.0) >= 0.78 and hard_cases_total <= 12:
+    if (
+        precision >= float(settings.quality.precision_threshold)
+        and recall >= float(settings.quality.recall_threshold)
+        and (f1 or 0.0) >= float(settings.quality.f1_threshold)
+        and hard_cases_total <= 12
+    ):
         notes.append("The detector is close to the balanced promotion gate and can move into stricter pilot video replay.")
         return "ready", notes
     notes.append("The detector can keep running, but it still needs a stronger site benchmark and hard-case reinforcement.")
@@ -1431,7 +1448,7 @@ def _build_site_benchmark_manifest(repository: AlertRepository, hard_case_breakd
     return payload
 
 
-def _build_pilot_video_eval(hard_case_breakdown: dict[str, int]) -> dict[str, Any]:
+def _build_pilot_video_eval(settings: AppSettings, hard_case_breakdown: dict[str, int]) -> dict[str, Any]:
     clip_root = REPO_ROOT / "artifacts" / "captures" / "clips"
     clip_paths = sorted(clip_root.rglob("*.mp4")) if clip_root.exists() else []
     recent = clip_paths[-120:]
@@ -1441,18 +1458,27 @@ def _build_pilot_video_eval(hard_case_breakdown: dict[str, int]) -> dict[str, An
         "generated_at": utc_now().isoformat(),
         "status": "review_required",
         "evaluation_mode": "inventory_replay_proxy",
+        "sampled_cases": len(recent),
         "sampled_clips": len(recent),
         "camera_count": len(camera_ids),
         "date_count": len(date_keys),
         "false_positive": int(hard_case_breakdown.get("false_positive") or 0),
         "missed_detection": int(hard_case_breakdown.get("missed_detection") or 0),
+        "mean_latency_ms": None,
+        "p95_latency_ms": None,
+        "clip_hit_rate": None,
+        "temporal_stability": None,
         "average_latency_ms": None,
         "notes": [
             "The current pilot video replay is still an inventory proxy built from local clips and hard-case counts.",
             "Do not treat this as a promotion pass until a real pilot video run confirms both false-positive and missed-detection behavior.",
         ],
     }
-    if len(recent) >= 20 and payload["false_positive"] == 0 and payload["missed_detection"] == 0:
+    if (
+        len(recent) >= int(settings.quality.pilot_replay_min_samples)
+        and payload["false_positive"] == 0
+        and payload["missed_detection"] == 0
+    ):
         payload["status"] = "ready"
     pilot_path = _quality_reports_dir() / "pilot_video_eval.json"
     payload["artifact_path"] = _write_json_artifact(pilot_path, payload)
@@ -1497,6 +1523,65 @@ def _load_quality_json(name: str) -> dict[str, Any] | None:
         return json.loads(target.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def _pilot_video_gate_status(settings: AppSettings, pilot_video_eval: dict[str, Any]) -> tuple[bool, list[str]]:
+    notes: list[str] = []
+    sampled_cases = int(pilot_video_eval.get("sampled_cases") or pilot_video_eval.get("sampled_clips") or 0)
+    mean_latency_ms = _float_or_none(pilot_video_eval.get("mean_latency_ms") or pilot_video_eval.get("average_latency_ms"))
+    p95_latency_ms = _float_or_none(pilot_video_eval.get("p95_latency_ms"))
+    if sampled_cases < int(settings.quality.pilot_replay_min_samples):
+        notes.append("pilot replay sampled cases below threshold")
+    if mean_latency_ms is None:
+        notes.append("pilot replay mean latency missing")
+    elif mean_latency_ms > float(settings.quality.mean_latency_ms_threshold):
+        notes.append("pilot replay mean latency above threshold")
+    if p95_latency_ms is None:
+        notes.append("pilot replay p95 latency missing")
+    elif p95_latency_ms > float(settings.quality.p95_latency_ms_threshold):
+        notes.append("pilot replay p95 latency above threshold")
+    if pilot_video_eval.get("status") == "invalid":
+        notes.append("pilot replay reported invalid")
+    return (not notes, notes)
+
+
+def _runtime_quality_context(settings: AppSettings) -> dict[str, Any]:
+    runtime_db = settings.resolve_path(settings.persistence.runtime_dir) / "helmet_monitoring.db"
+    dead_letter = 0
+    if runtime_db.exists():
+        try:
+            with sqlite3.connect(str(runtime_db), timeout=5) as conn:
+                row = conn.execute("SELECT COUNT(*) FROM task_queue WHERE status = 'dead_letter'").fetchone()
+                dead_letter = int(row[0] or 0) if row else 0
+        except Exception:
+            dead_letter = 0
+    queue_stats = {}
+    try:
+        queue_stats = get_queue_stats()
+    except Exception:
+        queue_stats = {}
+    return {
+        "onnxruntime_available": importlib.util.find_spec("onnxruntime") is not None,
+        "sqlite_db": {
+            "configured": True,
+            "exists": runtime_db.exists(),
+            "label": _repo_rel_label(runtime_db) or runtime_db.name,
+        },
+        "task_queue": {
+            "dead_letter": dead_letter,
+            "stats": queue_stats,
+        },
+        "websocket": {
+            "status": "configured",
+            "topics": ["alerts", "dashboard", "cameras"],
+        },
+        "ci": {
+            "configured": (REPO_ROOT / ".github" / "workflows").exists(),
+        },
+        "docker": {
+            "configured": any((REPO_ROOT / name).exists() for name in ("Dockerfile", "docker-compose.yml", "docker-compose.yaml")),
+        },
+    }
 
 
 def _write_quality_artifacts(payload: dict[str, Any]) -> dict[str, str]:
@@ -1600,11 +1685,13 @@ def build_quality_summary(settings: AppSettings, repository: AlertRepository, di
     hard_cases = repository.list_hard_cases(limit=500)
     hard_case_breakdown = _hard_case_scene_breakdown(hard_cases)
     site_benchmark = _load_quality_json("site_benchmark_manifest.json") or _build_site_benchmark_manifest(repository, hard_case_breakdown)
-    pilot_video_eval = _load_quality_json("pilot_video_eval.json") or _build_pilot_video_eval(hard_case_breakdown)
+    pilot_video_eval = _load_quality_json("pilot_video_eval.json") or _build_pilot_video_eval(settings, hard_case_breakdown)
     latest_compare_report = _load_latest_compare_report()
+    runtime_health = _runtime_quality_context(settings)
 
     detector_state, detector_notes = _detector_quality_state(
         active_run.get("metrics", {}) if isinstance(active_run, dict) else {},
+        settings=settings,
         hard_cases_total=len(hard_cases),
     )
 
@@ -1649,7 +1736,9 @@ def build_quality_summary(settings: AppSettings, repository: AlertRepository, di
     face_notes = [_normalize_quality_text(item) for item in face_notes if _normalize_quality_text(item)]
 
     benchmark_ready = site_benchmark.get("status") == "ready"
-    pilot_ready = pilot_video_eval.get("status") == "ready"
+    if settings.quality.site_holdout_required and not site_benchmark.get("summary", {}).get("splits", {}).get("site_holdout"):
+        benchmark_ready = False
+    pilot_ready, pilot_gate_notes = _pilot_video_gate_status(settings, pilot_video_eval)
     if detector_state == "invalid":
         promotion_status = "invalid"
         promotion_reason = "Detector metrics are still below the balanced promotion gate. Finish the local benchmark and hard-case retraining first."
@@ -1677,6 +1766,7 @@ def build_quality_summary(settings: AppSettings, repository: AlertRepository, di
         next_actions.append("Add more night, backlight, occlusion, and crowd hard-cases, then regenerate the site benchmark manifest.")
     if not pilot_ready:
         next_actions.append("Run a real pilot video replay to measure false positives, misses, and latency instead of relying on mAP alone.")
+    next_actions.extend(pilot_gate_notes)
     if badge_state != "ready":
         next_actions.append("Build a badge OCR eval set and tune ROI plus preprocessing before considering custom OCR training.")
     if face_state != "ready":
@@ -1755,6 +1845,7 @@ def build_quality_summary(settings: AppSettings, repository: AlertRepository, di
         },
         "site_benchmark": site_benchmark,
         "pilot_video_eval": pilot_video_eval,
+        "runtime_health": runtime_health,
         "hard_case_scene_breakdown": site_benchmark.get("summary", {}).get("scene_breakdown", hard_case_breakdown),
         "latest_compare_report": latest_compare_report,
         "promotion_gate": {
@@ -1764,6 +1855,9 @@ def build_quality_summary(settings: AppSettings, repository: AlertRepository, di
                 "detector_ready": detector_state == "ready",
                 "site_benchmark_ready": benchmark_ready,
                 "pilot_video_ready": pilot_ready,
+                "onnxruntime_available": bool(runtime_health.get("onnxruntime_available")),
+                "sqlite_ready": bool(runtime_health.get("sqlite_db", {}).get("exists")),
+                "task_queue_dead_letter": int(runtime_health.get("task_queue", {}).get("dead_letter") or 0),
             },
         },
         "next_actions": deduped_actions[:12],

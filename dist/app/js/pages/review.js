@@ -1,5 +1,6 @@
 import { api, isAuthenticated } from '../api.js?v=1';
 import { pick } from '../i18n.js?v=1';
+import { createRealtimeChannel } from '../realtime.js?v=1';
 import {
   badge,
   emptyState,
@@ -46,6 +47,16 @@ let state = {
   actionPage: 0,
   mobileTab: 'queue',
 };
+let realtimeChannel = null;
+let realtimeRefreshTimer = 0;
+
+function scheduleRealtimeRefresh(container) {
+  if (realtimeRefreshTimer) window.clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = window.setTimeout(() => {
+    realtimeRefreshTimer = 0;
+    render(container);
+  }, 180);
+}
 
 function isMobileView() {
   return window.matchMedia('(max-width: 860px)').matches;
@@ -584,6 +595,13 @@ export async function render(container) {
     state.actionPage = 0;
     if (!selectedAlert()) state.mobileTab = 'queue';
     await redraw(container);
+    realtimeChannel?.close?.();
+    realtimeChannel = createRealtimeChannel('alerts', {
+      onMessage(message) {
+        if (!['alert_created', 'alert_updated'].includes(message?.type)) return;
+        scheduleRealtimeRefresh(container);
+      },
+    });
   } catch (error) {
     container.innerHTML = `${pageHeader(
       'CASE OPERATIONS',
@@ -592,4 +610,11 @@ export async function render(container) {
     )}${emptyState(pick('复核接口暂不可用', 'Review API unavailable'), error.message)}`;
     markPageReady(container, 'review');
   }
+}
+
+export function destroy() {
+  realtimeChannel?.close?.();
+  realtimeChannel = null;
+  if (realtimeRefreshTimer) window.clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = 0;
 }

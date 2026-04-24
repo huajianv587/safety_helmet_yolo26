@@ -246,6 +246,15 @@ def test_ops_write_endpoints_sanitize_path_like_fields(tmp_path, monkeypatch):
     monkeypatch.setattr("helmet_monitoring.api.app.rollback_release", fake_rollback_release)
     monkeypatch.setattr("helmet_monitoring.services.operations.rollback_release", fake_rollback_release)
     monkeypatch.setattr(
+        "helmet_monitoring.api.app._release_gate_status",
+        lambda *_args, **_kwargs: {
+            "quality_ready": True,
+            "readiness_ready": True,
+            "quality_payload": {"promotion_gate": {"status": "ready", "reason": "test override"}},
+            "readiness_blockers": [],
+        },
+    )
+    monkeypatch.setattr(
         "helmet_monitoring.api.app.export_feedback_cases",
         lambda *args, **kwargs: {
             "export_id": "export-001",

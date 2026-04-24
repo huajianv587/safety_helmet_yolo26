@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 import cv2
 
@@ -16,7 +17,10 @@ class PendingClip:
     event_no: str
     created_at: datetime
     remaining_post_frames: int
-    frames: list = field(default_factory=list)
+    preloaded_frames: list = field(default_factory=list)
+    staging_path: Path | None = None
+    writer: object | None = None
+    frames_written: int = 0
 
 
 class ClipRecorder:
@@ -27,6 +31,11 @@ class ClipRecorder:
         self.post_frames = max(1, int(settings.clip.post_seconds * settings.clip.fps))
         self._buffers: dict[str, deque] = {}
         self._pending: dict[str, list[PendingClip]] = {}
+
+    def _staging_root(self) -> Path:
+        root = self.settings.resolve_path(self.settings.persistence.runtime_dir) / "clip_staging"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
 
     def _overlay(self, frame, camera: CameraSettings, event_no: str, observed_at: datetime):
         stamped = frame.copy()
@@ -49,6 +58,33 @@ class ClipRecorder:
             )
         return stamped
 
+    def _open_writer(self, pending: PendingClip, frame) -> bool:
+        if pending.writer is not None:
+            return True
+
+        staging_path = self._staging_root() / f"{pending.created_at.strftime('%Y%m%d_%H%M%S')}_{pending.alert_id}.mp4"
+        height, width = frame.shape[:2]
+        writer = cv2.VideoWriter(
+            str(staging_path),
+            cv2.VideoWriter_fourcc(*self.settings.clip.codec[:4]),
+            max(1.0, float(self.settings.clip.fps)),
+            (width, height),
+        )
+        if not writer or not writer.isOpened():
+            try:
+                writer.release()
+            except Exception:
+                pass
+            return False
+
+        pending.staging_path = staging_path
+        pending.writer = writer
+        for buffered_frame in pending.preloaded_frames:
+            writer.write(buffered_frame)
+            pending.frames_written += 1
+        pending.preloaded_frames.clear()
+        return True
+
     def capture(self, camera: CameraSettings, frame, observed_at: datetime) -> list[dict[str, str | None]]:
         if not self.settings.clip.enabled:
             return []
@@ -58,18 +94,38 @@ class ClipRecorder:
         completed: list[dict[str, str | None]] = []
         pendings = self._pending.get(camera.camera_id, [])
         for pending in list(pendings):
-            pending.frames.append(self._overlay(frame, camera, pending.event_no, observed_at))
+            overlay_frame = self._overlay(frame, camera, pending.event_no, observed_at)
+            if self._open_writer(pending, overlay_frame):
+                pending.writer.write(overlay_frame)
+                pending.frames_written += 1
+            else:
+                pending.preloaded_frames.append(overlay_frame)
             pending.remaining_post_frames -= 1
             if pending.remaining_post_frames <= 0:
-                clip_path, clip_url = self.evidence_store.save_video_frames(
-                    camera.camera_id,
-                    pending.frames,
-                    pending.alert_id,
-                    pending.created_at,
-                    category="clips",
-                    fps=self.settings.clip.fps,
-                    codec=self.settings.clip.codec,
-                )
+                writer = pending.writer
+                if writer is not None:
+                    writer.release()
+                    pending.writer = None
+                if pending.staging_path is not None and pending.staging_path.exists():
+                    clip_path, clip_url = self.evidence_store.save_existing_file(
+                        camera.camera_id,
+                        pending.staging_path,
+                        pending.alert_id,
+                        pending.created_at,
+                        category="clips",
+                        extension=".mp4",
+                        content_type="video/mp4",
+                    )
+                else:
+                    clip_path, clip_url = self.evidence_store.save_video_frames(
+                        camera.camera_id,
+                        pending.preloaded_frames,
+                        pending.alert_id,
+                        pending.created_at,
+                        category="clips",
+                        fps=self.settings.clip.fps,
+                        codec=self.settings.clip.codec,
+                    )
                 completed.append(
                     {
                         "alert_id": pending.alert_id,
@@ -90,6 +146,6 @@ class ClipRecorder:
             event_no=event_no,
             created_at=observed_at,
             remaining_post_frames=self.post_frames,
-            frames=initial_frames,
+            preloaded_frames=initial_frames,
         )
         self._pending.setdefault(camera.camera_id, []).append(pending)

@@ -160,6 +160,7 @@ class ModelGovernanceTest(unittest.TestCase):
             self.assertTrue(export_case.exists())
             self.assertTrue(Path(manifest["feedback_cases_manifest_path"]).exists())
             self.assertEqual(manifest["label_breakdown"]["helmet"], 1)
+            repo.close()
 
     def test_build_feedback_dataset_writes_merged_lists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -207,6 +208,7 @@ class ModelGovernanceTest(unittest.TestCase):
             self.assertEqual(manifest["hard_case_manifest"]["case_type_breakdown"]["false_positive"], 1)
             self.assertIn("night", manifest["scene_breakdown"])
             self.assertEqual(set(manifest["allowed_labels"]), {"helmet", "no_helmet"})
+            repo.close()
 
     def test_build_benchmark_dataset_bundle_respects_manifest_splits(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

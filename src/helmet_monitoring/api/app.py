@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import copy
 import hashlib
 import hmac
 import json
@@ -80,11 +79,27 @@ from helmet_monitoring.services.operations_studio import (
     sync_identity_registry,
 )
 from helmet_monitoring.services.person_directory import PersonDirectory
+from helmet_monitoring.services.live_frame_hub import get_live_frame_hub
 from helmet_monitoring.services.video_sources import is_local_device_source
 from helmet_monitoring.ui.live_preview_stream import BrowserInferenceEngine
 from helmet_monitoring.services.model_governance import build_feedback_dataset, export_feedback_cases
 from helmet_monitoring.storage.evidence_store import EvidenceStore
 from helmet_monitoring.storage.repository import AlertRepository, build_repository, parse_timestamp
+from helmet_monitoring.api.cache_manager import CacheTier, get_cache_manager, stable_cache_key
+from helmet_monitoring.api.cache_integration import CacheKeyBuilder, CacheInvalidator, warmup_critical_caches
+from helmet_monitoring.api.websocket import (
+    broadcast_alert_updated,
+    broadcast_frame_state,
+    broadcast_metrics_update,
+    broadcast_overview_snapshot,
+    broadcast_queue_update,
+    dispatch_topic_message,
+    get_connection_manager,
+    websocket_alerts_handler,
+    websocket_cameras_handler,
+    websocket_dashboard_handler,
+)
+from helmet_monitoring.tasks.task_queue import get_queue_stats
 
 
 UTC = timezone.utc
@@ -94,12 +109,11 @@ MEDIA_TOKEN_SECONDS = 24 * 60 * 60
 ALLOWED_ACCOUNT_ROLES = tuple(ROLE_ROUTES.keys())
 GUEST_IDENTITY = TrustedIdentity(username="guest", role="viewer", display_name="访客模式", email="")
 _ENV_PRIMED = False
-_RUNTIME_CACHE_SECONDS = 15.0
-_READ_CACHE_SECONDS = 15.0
-_RUNTIME_CACHE_LOCK = Lock()
-_RUNTIME_CACHE: dict[str, Any] = {"key": None, "expires_at": 0.0, "services": None}
-_READ_CACHE_LOCK = Lock()
-_READ_CACHE: dict[Any, tuple[float, Any]] = {}
+
+# Optimization: Unified cache system using TieredCacheManager
+# Replaces dual cache (_RUNTIME_CACHE + _READ_CACHE) with single manager
+_UNIFIED_CACHE_LOCK = Lock()
+_RUNTIME_SERVICES_REGISTRY: dict[str, "RuntimeServices"] = {}
 _AUTH_WRITE_LOCK = Lock()
 
 COMPACT_ALERT_FIELDS = (
@@ -429,41 +443,72 @@ def _runtime_cache_key() -> tuple[str, str, str, str]:
     )
 
 
+def _runtime_registry_signature() -> str:
+    payload = stable_cache_key(_runtime_cache_key()).encode("utf-8", errors="replace")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _read_cache_key(key: Any) -> str:
+    return f"read:{stable_cache_key(key)}"
+
+
+def _close_runtime_service_bundle(services: RuntimeServices) -> None:
+    try:
+        services.repository.close()
+    except Exception:
+        pass
+
+
 def invalidate_runtime_services() -> None:
-    with _RUNTIME_CACHE_LOCK:
-        _RUNTIME_CACHE["key"] = None
-        _RUNTIME_CACHE["expires_at"] = 0.0
-        _RUNTIME_CACHE["services"] = None
-    with _READ_CACHE_LOCK:
-        _READ_CACHE.clear()
+    """
+    Invalidate runtime services cache.
+
+    Optimization: Uses unified cache manager instead of dual cache.
+    """
+    cache = get_cache_manager()
+    with _UNIFIED_CACHE_LOCK:
+        stale_services = list(_RUNTIME_SERVICES_REGISTRY.values())
+        _RUNTIME_SERVICES_REGISTRY.clear()
+    for services in stale_services:
+        _close_runtime_service_bundle(services)
+    cache.invalidate_pattern("runtime:*")
+    cache.invalidate_pattern("read:*")
 
 
 def _read_cache_get(key: Any) -> Any | None:
-    now = time.monotonic()
-    with _READ_CACHE_LOCK:
-        cached = _READ_CACHE.get(key)
-        if cached is None:
-            return None
-        expires_at, payload = cached
-        if expires_at <= now:
-            _READ_CACHE.pop(key, None)
-            return None
-        return copy.deepcopy(payload)
+    """
+    Get value from read cache.
+
+    Optimization: Uses unified TieredCacheManager instead of separate _READ_CACHE.
+    """
+    cache = get_cache_manager()
+    return cache.get(_read_cache_key(key), CacheTier.METRICS)
 
 
 def _read_cache_set(key: Any, payload: Any) -> Any:
-    with _READ_CACHE_LOCK:
-        _READ_CACHE[key] = (time.monotonic() + _READ_CACHE_SECONDS, copy.deepcopy(payload))
+    """
+    Set value in read cache.
+
+    Optimization: Uses unified TieredCacheManager instead of separate _READ_CACHE.
+    """
+    cache = get_cache_manager()
+    cache.set(_read_cache_key(key), payload, CacheTier.METRICS)
     return payload
 
 
 def runtime_services() -> RuntimeServices:
-    key = _runtime_cache_key()
-    now = time.monotonic()
-    with _RUNTIME_CACHE_LOCK:
-        cached = _RUNTIME_CACHE.get("services")
-        if cached is not None and _RUNTIME_CACHE.get("key") == key and float(_RUNTIME_CACHE.get("expires_at") or 0) > now:
+    """
+    Get or create runtime services (settings, repository, etc.).
+
+    Runtime services are not stored in the shared cache because they contain
+    locks, clients, and other live runtime state that should never be deep-copied.
+    """
+    signature = _runtime_registry_signature()
+    with _UNIFIED_CACHE_LOCK:
+        cached = _RUNTIME_SERVICES_REGISTRY.get(signature)
+        if cached is not None:
             return cached
+
         settings = load_settings()
         repository = ThreadLockedRepository(build_repository(settings))
         services = RuntimeServices(
@@ -474,10 +519,13 @@ def runtime_services() -> RuntimeServices:
             notifier=NotificationService(settings, repository),
             browser_inference=BrowserInferenceEngine(settings),
         )
-        _RUNTIME_CACHE["key"] = key
-        _RUNTIME_CACHE["expires_at"] = now + _RUNTIME_CACHE_SECONDS
-        _RUNTIME_CACHE["services"] = services
+        _RUNTIME_SERVICES_REGISTRY[signature] = services
         return services
+
+
+def get_runtime_services() -> RuntimeServices:
+    """Compatibility wrapper for startup hooks and external callers."""
+    return runtime_services()
 
 
 def _user_payload(identity: TrustedIdentity) -> dict[str, Any]:
@@ -494,8 +542,17 @@ def _user_payload(identity: TrustedIdentity) -> dict[str, Any]:
 
 def _public_root_candidates() -> list[Path]:
     return [
+        REPO_ROOT / "dist" / "landing.html",
         REPO_ROOT / "helmet_safety_landing.html",
         REPO_ROOT / "dist" / "index.html",
+    ]
+
+
+def _app_frontend_candidates() -> list[Path]:
+    return [
+        REPO_ROOT / "dist" / "app",
+        REPO_ROOT / "frontend-react" / "build",
+        REPO_ROOT / "frontend",
     ]
 
 
@@ -714,6 +771,17 @@ def _live_frame_state(
     valid_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     current = now or datetime.now(tz=UTC)
+    frame_entry = get_live_frame_hub().get(camera_id)
+    if frame_entry is not None:
+        updated_at = frame_entry.updated_at.astimezone(UTC)
+        return {
+            "has_live_frame": True,
+            "frame_updated_at": updated_at.isoformat(),
+            "frame_age_seconds": max(0, round((current - updated_at).total_seconds(), 2)),
+            "frame_url": f"{API_PREFIX}/cameras/{camera_id}/frame.jpg",
+            "stream_url": f"{API_PREFIX}/cameras/{camera_id}/stream.mjpg",
+            "frame_sequence": frame_entry.sequence,
+        }
     path = _resolve_live_frame_path(settings, repository, camera_id, valid_ids=valid_ids)
     if not path.exists() or not path.is_file():
         return {
@@ -722,6 +790,7 @@ def _live_frame_state(
             "frame_age_seconds": None,
             "frame_url": None,
             "stream_url": None,
+            "frame_sequence": None,
         }
     stat = path.stat()
     updated_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
@@ -730,7 +799,8 @@ def _live_frame_state(
         "frame_updated_at": updated_at.isoformat(),
         "frame_age_seconds": max(0, round((current - updated_at).total_seconds(), 2)),
         "frame_url": f"{API_PREFIX}/cameras/{camera_id}/frame.jpg",
-        "stream_url": f"{API_PREFIX}/cameras/{camera_id}/stream.mjpeg",
+        "stream_url": f"{API_PREFIX}/cameras/{camera_id}/stream.mjpg",
+        "frame_sequence": None,
     }
 
 
@@ -812,6 +882,28 @@ def _live_mjpeg_generator(frame_path: Path, *, interval_seconds: float = 0.12):
         time.sleep(interval_seconds)
 
 
+def _live_mjpeg_generator_for_camera(camera_id: str, frame_path: Path, *, interval_seconds: float = 0.12):
+    last_sequence = -1
+    hub = get_live_frame_hub()
+    while True:
+        entry = hub.get(camera_id)
+        if entry is not None and entry.sequence != last_sequence:
+            payload = entry.payload
+            last_sequence = entry.sequence
+            yield b"--frame\r\n"
+            yield b"Content-Type: image/jpeg\r\n"
+            yield f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii")
+            yield payload
+            yield b"\r\n"
+            time.sleep(interval_seconds)
+            continue
+        if entry is not None:
+            time.sleep(interval_seconds)
+            continue
+        yield from _live_mjpeg_generator(frame_path, interval_seconds=interval_seconds)
+        return
+
+
 def _runtime_path_state(path: Path) -> dict[str, Any]:
     resolved = path.resolve()
     return {
@@ -837,11 +929,90 @@ def _safe_path_label(value: Any) -> str:
         return candidate.name or text
 
 
+def _release_gate_status(services: RuntimeServices) -> dict[str, Any]:
+    quality_payload = build_quality_summary(services.settings, services.repository, services.directory)
+    readiness_payload = build_readiness_payload(services.settings)
+    readiness_blockers = [
+        {
+            "check_id": str(item.get("check_id") or ""),
+            "status": str(item.get("status") or ""),
+            "detail": str(item.get("detail") or ""),
+        }
+        for item in readiness_payload.get("checks", [])
+        if str(item.get("status") or "").lower() in {"missing", "invalid"}
+    ]
+    return {
+        "quality_payload": quality_payload,
+        "readiness_payload": readiness_payload,
+        "quality_ready": quality_payload.get("promotion_gate", {}).get("status") == "ready",
+        "readiness_ready": not readiness_blockers,
+        "readiness_blockers": readiness_blockers,
+    }
+
+
 def _normalize_list_param(value: str | None) -> set[str] | None:
     if not value:
         return None
     items = {item.strip() for item in str(value).split(",") if item.strip()}
     return items or None
+
+
+def _list_alerts_with_offset(
+    repository: AlertRepository,
+    *,
+    limit: int,
+    offset: int,
+    since: datetime | None = None,
+    camera_id: str | None = None,
+    status: str | None = None,
+    identity_status: str | None = None,
+    department: str | None = None,
+    text_query: str = "",
+) -> dict[str, Any]:
+    remaining_offset = max(0, int(offset))
+    page_limit = max(1, min(int(limit), 500))
+    cursor: str | None = None
+    skipped_total = 0
+    while remaining_offset > 0:
+        page = repository.list_alerts_page(
+            limit=min(remaining_offset, 500),
+            since=since,
+            camera_id=camera_id,
+            status=status,
+            identity_status=identity_status,
+            department=department,
+            text_query=text_query,
+            cursor=cursor,
+        )
+        items = page.get("items") or []
+        skipped_total += len(items)
+        remaining_offset -= len(items)
+        cursor = page.get("next_cursor")
+        if not page.get("has_more") or not items or not cursor:
+            return {
+                "items": [],
+                "total": int(page.get("total") or skipped_total),
+                "limit": page_limit,
+                "cursor": cursor,
+                "next_cursor": None,
+                "has_more": False,
+                "offset": max(0, int(offset)),
+            }
+
+    page = repository.list_alerts_page(
+        limit=page_limit,
+        since=since,
+        camera_id=camera_id,
+        status=status,
+        identity_status=identity_status,
+        department=department,
+        text_query=text_query,
+        cursor=cursor,
+    )
+    return {
+        **page,
+        "offset": max(0, int(offset)),
+    }
 
 
 def _account_payload(account: AuthAccount, *, editable: bool) -> dict[str, Any]:
@@ -959,8 +1130,9 @@ def platform_overview(
     services: RuntimeServices = Depends(runtime_services),
     identity: TrustedIdentity = Depends(optional_identity),
 ) -> dict[str, Any]:
+    cache = get_cache_manager()
     cache_key = ("overview", _runtime_cache_key(), identity.role, max(1, int(days)))
-    cached = _read_cache_get(cache_key)
+    cached = cache.get(cache_key, CacheTier.SUMMARIES)
     if cached is not None:
         return cached
     payload = build_overview_payload(services.settings, services.repository, days=days, recent_limit=12, evidence_limit=6)
@@ -1006,7 +1178,8 @@ def platform_overview(
             "private_bucket": delivery_summary.get("storage", {}).get("private_bucket", False),
         },
     }
-    return _read_cache_set(cache_key, payload)
+    cache.set(cache_key, payload, CacheTier.SUMMARIES)
+    return payload
 
 
 @helmet_router.get("/public/landing")
@@ -1105,49 +1278,75 @@ def list_alerts(
     days: int = 7,
     limit: int = 100,
     offset: int = 0,
+    cursor: str | None = None,
     mode: str = "compact",
     include_media: bool = False,
     services: RuntimeServices = Depends(runtime_services),
     _identity: TrustedIdentity = Depends(optional_identity),
 ) -> dict[str, Any]:
-    cache_key = (
-        "alerts",
-        _runtime_cache_key(),
-        q,
-        status,
-        identity_status,
-        department,
-        camera_id,
-        max(1, int(days)),
-        max(1, min(int(limit), 500)),
-        max(0, int(offset)),
-        str(mode).strip().lower(),
-        bool(include_media),
+    # Use tiered cache with 30s TTL for alert summaries
+    cache = get_cache_manager()
+    cache_key = CacheKeyBuilder.alerts_list(
+        q=q,
+        status=status,
+        identity_status=identity_status,
+        department=department,
+        camera_id=camera_id,
+        days=days,
+        limit=limit,
+        offset=offset,
+        cursor=cursor,
+        mode=mode,
+        include_media=include_media,
     )
-    cached = _read_cache_get(cache_key)
+
+    cached = cache.get(cache_key, CacheTier.SUMMARIES)
     if cached is not None:
         return cached
+
     since = datetime.now(tz=UTC) - timedelta(days=max(1, int(days)))
-    alerts = sort_alerts(services.repository.list_alerts(limit=1000, since=since, camera_id=camera_id))
-    filtered = filter_alerts(
-        alerts,
-        text_query=q,
-        statuses=_normalize_list_param(status),
-        departments=_normalize_list_param(department),
-        camera_ids=_normalize_list_param(camera_id),
-        date_from=since,
-    )
-    identity_statuses = _normalize_list_param(identity_status)
-    if identity_statuses:
-        filtered = [item for item in filtered if str(item.get("identity_status") or "") in identity_statuses]
     start = max(0, int(offset))
     capped_limit = max(1, min(int(limit), 500))
-    capped = filtered[start : start + capped_limit]
+    if cursor:
+        page = services.repository.list_alerts_page(
+            limit=capped_limit,
+            since=since,
+            camera_id=camera_id,
+            status=status,
+            identity_status=identity_status,
+            department=department,
+            text_query=q,
+            cursor=cursor,
+        )
+    else:
+        page = _list_alerts_with_offset(
+            services.repository,
+            limit=capped_limit,
+            offset=start,
+            since=since,
+            camera_id=camera_id,
+            status=status,
+            identity_status=identity_status,
+            department=department,
+            text_query=q,
+        )
+    capped = page.get("items") or []
     detailed = str(mode).strip().lower() == "detail"
     rows = [_decorate_alert(item, services.settings, include_media=bool(include_media or detailed)) for item in capped]
     if not detailed:
         rows = [_compact_alert_payload(item) for item in rows]
-    return _read_cache_set(cache_key, {"items": rows, "total": len(filtered), "offset": start, "limit": capped_limit})
+
+    result = {
+        "items": rows,
+        "total": int(page.get("total") or len(rows)),
+        "offset": 0 if cursor else start,
+        "limit": capped_limit,
+        "cursor": cursor,
+        "next_cursor": page.get("next_cursor"),
+        "has_more": bool(page.get("has_more")),
+    }
+    cache.set(cache_key, result, CacheTier.SUMMARIES)
+    return result
 
 
 @helmet_router.get("/alerts/{alert_id}")
@@ -1156,14 +1355,25 @@ def get_alert(
     services: RuntimeServices = Depends(runtime_services),
     _identity: TrustedIdentity = Depends(optional_identity),
 ) -> dict[str, Any]:
+    # Use tiered cache with 30s TTL for alert details
+    cache = get_cache_manager()
+    cache_key = CacheKeyBuilder.alert_detail(alert_id)
+
+    cached = cache.get(cache_key, CacheTier.SUMMARIES)
+    if cached is not None:
+        return cached
+
     alert = services.repository.get_alert(alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Alert not found.")
-    return {
+
+    result = {
         "alert": _decorate_alert(alert, services.settings, include_media=True),
         "actions": services.repository.list_alert_actions(alert_id=alert_id, limit=100),
         "notifications": services.repository.list_notification_logs(alert_id=alert_id, limit=100),
     }
+    cache.set(cache_key, result, CacheTier.SUMMARIES)
+    return result
 
 
 @helmet_router.post("/alerts/{alert_id}/assign")
@@ -1188,6 +1398,13 @@ def assign_alert(
         note=payload.note.strip() or None,
     )
     updated = services.repository.get_alert(alert_id) or alert
+
+    # Invalidate related caches
+    cache = get_cache_manager()
+    for pattern in CacheInvalidator.on_alert_updated(alert_id):
+        cache.invalidate_pattern(pattern)
+
+    dispatch_topic_message("alerts", "alert_updated", {"alert_id": alert_id, "updates": _compact_alert_payload(_decorate_alert(updated, services.settings, include_media=False))})
     invalidate_runtime_services()
     return {"alert": _decorate_alert(updated, services.settings, include_media=True)}
 
@@ -1252,6 +1469,13 @@ async def update_alert_status(
         remediation_snapshot_url=remediation_url,
     )
     updated = services.repository.get_alert(alert_id) or alert
+
+    # Invalidate related caches
+    cache = get_cache_manager()
+    for pattern in CacheInvalidator.on_alert_status_changed(alert_id):
+        cache.invalidate_pattern(pattern)
+
+    dispatch_topic_message("alerts", "alert_updated", {"alert_id": alert_id, "updates": _compact_alert_payload(_decorate_alert(updated, services.settings, include_media=False))})
     invalidate_runtime_services()
     return {"alert": _decorate_alert(updated, services.settings, include_media=True)}
 
@@ -1261,7 +1485,17 @@ def people(
     services: RuntimeServices = Depends(runtime_services),
     _identity: TrustedIdentity = Depends(current_identity),
 ) -> dict[str, Any]:
-    return {"items": services.directory.get_people()}
+    # Use tiered cache with 60s TTL for people list
+    cache = get_cache_manager()
+    cache_key = CacheKeyBuilder.people_list()
+
+    cached = cache.get(cache_key, CacheTier.CAMERAS)
+    if cached is not None:
+        return cached
+
+    result = {"items": services.directory.get_people()}
+    cache.set(cache_key, result, CacheTier.CAMERAS)
+    return result
 
 
 @helmet_router.get("/cameras")
@@ -1269,12 +1503,18 @@ def cameras(
     services: RuntimeServices = Depends(runtime_services),
     identity: TrustedIdentity = Depends(optional_identity),
 ) -> dict[str, Any]:
-    cache_key = ("cameras", _runtime_cache_key(), identity.role)
-    cached = _read_cache_get(cache_key)
+    # Use tiered cache with 60s TTL for cameras list
+    cache = get_cache_manager()
+    cache_key = f"{CacheKeyBuilder.cameras_list()}:role={identity.role}"
+
+    cached = cache.get(cache_key, CacheTier.CAMERAS)
     if cached is not None:
         return cached
+
     _, merged = merge_live_cameras(services.settings, services.repository.list_cameras())
-    return _read_cache_set(cache_key, {"items": [_camera_payload_for_identity(item, identity) for item in merged]})
+    result = {"items": [_camera_payload_for_identity(item, identity) for item in merged]}
+    cache.set(cache_key, result, CacheTier.CAMERAS)
+    return result
 
 
 @helmet_router.get("/cameras/live")
@@ -1303,13 +1543,45 @@ def live_camera_frame(
     camera_id: str,
     services: RuntimeServices = Depends(runtime_services),
     _identity: TrustedIdentity = Depends(optional_identity),
-) -> FileResponse:
+) -> Response:
     frame_path = _resolve_live_frame_path(services.settings, services.repository, camera_id)
+    entry = get_live_frame_hub().get(camera_id)
+    if entry is not None:
+        return Response(
+            content=entry.payload,
+            media_type=entry.content_type,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     if not frame_path.exists() or not frame_path.is_file():
         raise HTTPException(status_code=404, detail="Live frame is not available yet.")
     return FileResponse(
         frame_path,
         media_type="image/jpeg",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+def _stream_live_camera(
+    camera_id: str,
+    services: RuntimeServices = Depends(runtime_services),
+    _identity: TrustedIdentity = Depends(optional_identity),
+) -> StreamingResponse:
+    frame_path = _resolve_live_frame_path(services.settings, services.repository, camera_id)
+    entry = get_live_frame_hub().get(camera_id)
+    if entry is None and (not frame_path.exists() or not frame_path.is_file()):
+        raise HTTPException(status_code=404, detail="Live stream is not available yet.")
+    interval = 1.0 / max(1.0, float(getattr(services.settings.monitoring, "preview_fps", 8.0) or 8.0))
+    return StreamingResponse(
+        _live_mjpeg_generator_for_camera(camera_id, frame_path, interval_seconds=max(0.05, min(interval, 1.0))),
+        media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -1324,19 +1596,16 @@ def live_camera_stream(
     services: RuntimeServices = Depends(runtime_services),
     _identity: TrustedIdentity = Depends(optional_identity),
 ) -> StreamingResponse:
-    frame_path = _resolve_live_frame_path(services.settings, services.repository, camera_id)
-    if not frame_path.exists() or not frame_path.is_file():
-        raise HTTPException(status_code=404, detail="Live stream is not available yet.")
-    interval = 1.0 / max(1.0, float(getattr(services.settings.monitoring, "preview_fps", 8.0) or 8.0))
-    return StreamingResponse(
-        _live_mjpeg_generator(frame_path, interval_seconds=max(0.05, min(interval, 1.0))),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
+    return _stream_live_camera(camera_id, services=services, _identity=_identity)
+
+
+@helmet_router.get("/cameras/{camera_id}/stream.mjpg")
+def live_camera_stream_mjpg(
+    camera_id: str,
+    services: RuntimeServices = Depends(runtime_services),
+    _identity: TrustedIdentity = Depends(optional_identity),
+) -> StreamingResponse:
+    return _stream_live_camera(camera_id, services=services, _identity=_identity)
 
 
 @helmet_router.post("/cameras/{camera_id}/browser-infer")
@@ -1400,6 +1669,7 @@ def upsert_camera(
         "last_fps": None,
     }
     services.repository.upsert_camera(heartbeat)
+    dispatch_topic_message("cameras", "camera_status", {"camera_id": camera_id, "status": "configured"})
     invalidate_runtime_services()
     return {"camera": heartbeat}
 
@@ -1430,9 +1700,7 @@ def reports_summary(
     cached = _read_cache_get(cache_key)
     if cached is not None:
         return cached
-    since = datetime.now(tz=UTC) - timedelta(days=max(1, int(days)))
-    payload = build_reports_payload(
-        services.repository.list_alerts(limit=1000, since=since),
+    payload = services.repository.get_dashboard_aggregates(
         days=days,
         preview_limit=preview_limit,
         include_rows=include_rows,
@@ -1441,9 +1709,13 @@ def reports_summary(
         status_filters=_normalize_list_param(status),
         camera_filters=_normalize_list_param(camera_id),
     )
+    payload["applied_filters"] = payload.get("applied_filters") or {
+        "statuses": sorted(_normalize_list_param(status)),
+        "camera_ids": sorted(_normalize_list_param(camera_id)),
+    }
     payload["preview_rows"] = [
         _compact_alert_payload(_decorate_alert(item, services.settings, include_media=False))
-        for item in payload.get("preview_rows", [])
+        for item in (payload.get("preview_rows") or payload.get("recent_alerts", []))
     ]
     payload["rows"] = [
         _compact_alert_payload(_decorate_alert(item, services.settings, include_media=False))
@@ -1457,6 +1729,7 @@ def reports_rows(
     days: int = 30,
     limit: int = 500,
     offset: int = 0,
+    cursor: str | None = None,
     status: str | None = None,
     camera_id: str | None = None,
     services: RuntimeServices = Depends(runtime_services),
@@ -1468,6 +1741,7 @@ def reports_rows(
         max(1, int(days)),
         max(1, min(int(limit), 1000)),
         max(0, int(offset)),
+        cursor,
         status,
         camera_id,
     )
@@ -1475,25 +1749,49 @@ def reports_rows(
     if cached is not None:
         return cached
     since = datetime.now(tz=UTC) - timedelta(days=max(1, int(days)))
-    alerts = sort_alerts(services.repository.list_alerts(limit=1000, since=since))
-    filtered = filter_alerts(
-        alerts,
-        date_from=since,
-        statuses=_normalize_list_param(status),
-        camera_ids=_normalize_list_param(camera_id),
-    )
-    start = max(0, int(offset))
     capped_limit = max(1, min(int(limit), 1000))
-    rows = filtered[start : start + capped_limit]
-    return _read_cache_set(cache_key, {
-        "items": [
-            _compact_alert_payload(_decorate_alert(item, services.settings, include_media=False))
-            for item in rows
-        ],
-        "total": len(filtered),
-        "offset": start,
-        "limit": capped_limit,
-    })
+    if cursor:
+        page = services.repository.list_alerts_page(
+            limit=capped_limit,
+            since=since,
+            camera_id=camera_id,
+            status=status,
+            cursor=cursor,
+        )
+        payload = {
+            "items": [
+                _compact_alert_payload(_decorate_alert(item, services.settings, include_media=False))
+                for item in page.get("items", [])
+            ],
+            "total": int(page.get("total") or 0),
+            "offset": 0,
+            "limit": capped_limit,
+            "cursor": cursor,
+            "next_cursor": page.get("next_cursor"),
+            "has_more": bool(page.get("has_more")),
+        }
+    else:
+        page = services.repository.get_dashboard_aggregates(
+            days=days,
+            status_filters=_normalize_list_param(status),
+            camera_filters=_normalize_list_param(camera_id),
+            include_rows=True,
+            row_offset=max(0, int(offset)),
+            row_limit=capped_limit,
+        )
+        payload = {
+            "items": [
+                _compact_alert_payload(_decorate_alert(item, services.settings, include_media=False))
+                for item in page.get("rows", [])
+            ],
+            "total": int(page.get("rows_total") or 0),
+            "offset": max(0, int(offset)),
+            "limit": capped_limit,
+            "cursor": None,
+            "next_cursor": page.get("next_cursor"),
+            "has_more": bool(page.get("has_more")),
+        }
+    return _read_cache_set(cache_key, payload)
 
 
 @helmet_router.get("/notifications")
@@ -1713,6 +2011,39 @@ def ops_services(
     if cached is not None:
         return cached
     return _read_cache_set(cache_key, build_services_payload(services.settings, services.repository))
+
+
+@helmet_router.get("/cache/stats")
+def cache_stats(
+    _identity: TrustedIdentity = Depends(require_ops_read),
+) -> dict[str, Any]:
+    cache = get_cache_manager()
+    return cache.get_stats()
+
+
+@helmet_router.post("/cache/clear")
+def cache_clear(
+    tier: str | None = None,
+    identity: TrustedIdentity = Depends(require_role("admin")),
+) -> dict[str, Any]:
+    cache = get_cache_manager()
+    if tier:
+        normalized = str(tier).strip().lower()
+        cache_tier = next(
+            (
+                item
+                for item in CacheTier
+                if item.tier_name == normalized or item.name.lower() == normalized
+            ),
+            None,
+        )
+        if cache_tier is None:
+            raise HTTPException(status_code=400, detail=f"Invalid tier: {tier}")
+        count = cache.invalidate_tier(cache_tier)
+        return {"status": "ok", "message": f"Cleared {count} entries from {cache_tier.tier_name} tier"}
+    else:
+        cache.clear()
+        return {"status": "ok", "message": "Cleared all cache tiers"}
 
 
 @helmet_router.post("/ops/services/{service_name}/action")
@@ -1990,6 +2321,18 @@ def ops_release_snapshot(
     services: RuntimeServices = Depends(runtime_services),
     identity: TrustedIdentity = Depends(require_role("admin")),
 ) -> dict[str, Any]:
+    if payload.activate:
+        gate = _release_gate_status(services)
+        if not gate["quality_ready"] or not gate["readiness_ready"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Release activation is blocked by the quality gate or readiness blockers.",
+                    "quality_status": gate["quality_payload"].get("promotion_gate", {}).get("status"),
+                    "quality_reason": gate["quality_payload"].get("promotion_gate", {}).get("reason"),
+                    "readiness_blockers": gate["readiness_blockers"],
+                },
+            )
     result = create_release_snapshot(
         services.settings,
         release_name=payload.release_name.strip() or None,
@@ -2014,6 +2357,17 @@ def ops_release_activate(
     identity: TrustedIdentity = Depends(require_role("admin")),
 ) -> dict[str, Any]:
     _require_confirm_text(payload.confirm_text)
+    gate = _release_gate_status(services)
+    if not gate["quality_ready"] or not gate["readiness_ready"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Release activation is blocked by the quality gate or readiness blockers.",
+                "quality_status": gate["quality_payload"].get("promotion_gate", {}).get("status"),
+                "quality_reason": gate["quality_payload"].get("promotion_gate", {}).get("reason"),
+                "readiness_blockers": gate["readiness_blockers"],
+            },
+        )
     try:
         result = activate_release(
             services.settings,
@@ -2109,12 +2463,30 @@ def create_app() -> FastAPI:
                 return FileResponse(candidate)
         raise HTTPException(status_code=404, detail="Landing page is not built yet.")
 
+    @app.on_event("startup")
+    async def startup_event():
+        """Warm cache on startup"""
+        try:
+            from helmet_monitoring.api.cache_integration import warm_startup_cache
+            services = get_runtime_services()
+            warm_startup_cache(services)
+        except Exception as e:
+            print(f"Cache warmup failed: {e}")
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        invalidate_runtime_services()
+
     app.include_router(auth_router)
     app.include_router(helmet_router)
+    app.add_api_websocket_route("/ws/alerts", websocket_alerts_handler)
+    app.add_api_websocket_route("/ws/dashboard", websocket_dashboard_handler)
+    app.add_api_websocket_route("/ws/cameras", websocket_cameras_handler)
 
-    frontend_path = REPO_ROOT / "frontend"
-    if frontend_path.exists():
-        app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    for frontend_path in _app_frontend_candidates():
+        if frontend_path.exists():
+            app.mount("/app", StaticFiles(directory=frontend_path, html=True), name="frontend")
+            break
 
     return app
 
@@ -2128,4 +2500,4 @@ if __name__ == "__main__":
     src_root = REPO_ROOT / "src"
     if str(src_root) not in sys.path:
         sys.path.insert(0, str(src_root))
-    uvicorn.run("helmet_monitoring.api.app:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("helmet_monitoring.api.app:app", host="127.0.0.1", port=8112, reload=False)

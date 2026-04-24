@@ -49,6 +49,7 @@ class WorkflowTest(unittest.TestCase):
             self.assertEqual(len(hard_cases), 1)
             self.assertEqual(len(audit_logs), 1)
             self.assertTrue((root / "data" / "hard_cases" / "false_positive" / "alert-001" / "case_manifest.json").exists())
+            repo.close()
 
 
 if __name__ == "__main__":

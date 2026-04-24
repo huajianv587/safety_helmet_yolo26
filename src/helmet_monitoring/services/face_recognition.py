@@ -91,6 +91,23 @@ class FaceRecognitionService:
             embedding = embedding / norm
         return embedding, face_crop
 
+    def _rank_profiles(self, embedding: np.ndarray, profiles: list[FaceProfileRecord]) -> list[tuple[float, FaceProfileRecord]]:
+        if not profiles:
+            return []
+        try:
+            matrix = np.stack([profile.embedding for profile in profiles], axis=0)
+            similarities = matrix @ embedding
+            top_k = max(1, min(int(self.settings.face_recognition.top_k), len(profiles)))
+            candidate_indices = np.argpartition(similarities, -top_k)[-top_k:]
+            ordered_indices = candidate_indices[np.argsort(similarities[candidate_indices])[::-1]]
+            return [(float(similarities[index]), profiles[int(index)]) for index in ordered_indices]
+        except Exception:
+            ranked_matches: list[tuple[float, FaceProfileRecord]] = []
+            for profile in profiles:
+                ranked_matches.append((float(np.dot(embedding, profile.embedding)), profile))
+            ranked_matches.sort(key=lambda item: item[0], reverse=True)
+            return ranked_matches
+
     def match(self, frame, bbox: dict[str, int], profiles: list[FaceProfileRecord]) -> FaceMatchResult:
         if self.provider == "none" or not profiles:
             return FaceMatchResult(person=None, similarity=None, crop=None, provider="none")
@@ -100,11 +117,7 @@ class FaceRecognitionService:
         embedding, face_crop = self._encode_crop(crop)
         if embedding is None:
             return FaceMatchResult(person=None, similarity=None, crop=None, provider=self.provider)
-        ranked_matches: list[tuple[float, FaceProfileRecord]] = []
-        for profile in profiles:
-            similarity = float(np.dot(embedding, profile.embedding))
-            ranked_matches.append((similarity, profile))
-        ranked_matches.sort(key=lambda item: item[0], reverse=True)
+        ranked_matches = self._rank_profiles(embedding, profiles)
         best_similarity, best_profile = ranked_matches[0] if ranked_matches else (None, None)
         if best_profile is None or best_similarity is None:
             return FaceMatchResult(person=None, similarity=None, crop=face_crop, provider=self.provider)

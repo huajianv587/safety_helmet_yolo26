@@ -72,7 +72,32 @@ def _scene_tags_from_values(*values: Any) -> list[str]:
     return sorted(tags)
 
 
-def _load_case_frame(case_manifest: dict[str, Any]) -> tuple[Any | None, str | None]:
+def _sample_clip_frames(clip_path: Path, *, max_frames: int = 8) -> list[Any]:
+    try:
+        import cv2
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("OpenCV is required for pilot video replay.") from exc
+
+    capture = cv2.VideoCapture(str(clip_path))
+    try:
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if frame_count <= 0:
+            ok, frame = capture.read()
+            return [frame] if ok and frame is not None else []
+        target_count = max(1, min(int(max_frames), frame_count))
+        indices = sorted({int(round(index * (frame_count - 1) / max(target_count - 1, 1))) for index in range(target_count)})
+        frames: list[Any] = []
+        for frame_index in indices:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ok, frame = capture.read()
+            if ok and frame is not None:
+                frames.append(frame)
+        return frames
+    finally:
+        capture.release()
+
+
+def _load_case_frames(case_manifest: dict[str, Any], *, max_clip_frames: int = 8) -> tuple[list[Any], str | None]:
     try:
         import cv2
     except ImportError as exc:  # pragma: no cover
@@ -88,7 +113,7 @@ def _load_case_frame(case_manifest: dict[str, Any]) -> tuple[Any | None, str | N
         if image_path.exists():
             frame = cv2.imread(str(image_path))
             if frame is not None:
-                return frame, str(image_path)
+                return [frame], str(image_path)
     for key in ("local_clip_path", "clip_path", "source_clip_path"):
         path_value = case_manifest.get(key)
         if not path_value:
@@ -98,14 +123,10 @@ def _load_case_frame(case_manifest: dict[str, Any]) -> tuple[Any | None, str | N
             clip_path = (REPO_ROOT / clip_path).resolve()
         if not clip_path.exists():
             continue
-        capture = cv2.VideoCapture(str(clip_path))
-        try:
-            ok, frame = capture.read()
-        finally:
-            capture.release()
-        if ok and frame is not None:
-            return frame, str(clip_path)
-    return None, None
+        frames = _sample_clip_frames(clip_path, max_frames=max_clip_frames)
+        if frames:
+            return frames, str(clip_path)
+    return [], None
 
 
 def _predict_violation(model, frame, *, conf: float, imgsz: int, device: str) -> tuple[bool, float | None, list[str], float]:
@@ -131,6 +152,21 @@ def _predict_violation(model, frame, *, conf: float, imgsz: int, device: str) ->
             if label == "no_helmet":
                 predicted_violation = True
     return predicted_violation, top_confidence, labels, round(latency_ms, 3)
+
+
+def _percentile(values: list[float], ratio: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * ratio))))
+    return round(float(ordered[index]), 3)
+
+
+def _temporal_stability(frame_hits: list[bool]) -> float | None:
+    if len(frame_hits) <= 1:
+        return 1.0 if frame_hits else None
+    transitions = sum(1 for index in range(1, len(frame_hits)) if frame_hits[index] != frame_hits[index - 1])
+    return round(1.0 - (transitions / float(len(frame_hits) - 1)), 4)
 
 
 def _run_pilot_video_eval(settings, model, args: argparse.Namespace) -> dict[str, Any]:
@@ -162,23 +198,41 @@ def _run_pilot_video_eval(settings, model, args: argparse.Namespace) -> dict[str
     false_positive = 0
     missed_detection = 0
     latency_values: list[float] = []
+    stability_values: list[float] = []
+    expected_violation_total = 0
+    expected_violation_hits = 0
     sampled = 0
 
     for case_type, manifest_path, payload in case_manifests[: args.pilot_limit]:
-        frame, source_path = _load_case_frame(payload)
-        if frame is None:
+        frames, source_path = _load_case_frames(payload, max_clip_frames=8)
+        if not frames:
             continue
-        predicted_violation, top_confidence, labels, latency_ms = _predict_violation(
-            model,
-            frame,
-            conf=float(settings.model.confidence),
-            imgsz=args.imgsz,
-            device=args.device or settings.model.device,
-        )
-        latency_values.append(latency_ms)
+        frame_results = [
+            _predict_violation(
+                model,
+                frame,
+                conf=float(settings.model.confidence),
+                imgsz=args.imgsz,
+                device=args.device or settings.model.device,
+            )
+            for frame in frames
+        ]
+        frame_hits = [item[0] for item in frame_results]
+        predicted_violation = any(frame_hits)
+        top_confidence = max((item[1] for item in frame_results if item[1] is not None), default=None)
+        labels = sorted({label for item in frame_results for label in item[2]})
+        case_latency_values = [item[3] for item in frame_results]
+        latency_values.extend(case_latency_values)
+        stability = _temporal_stability(frame_hits)
+        if stability is not None:
+            stability_values.append(stability)
         scene_tags = sorted(set(_scene_tags_from_values(case_type, payload.get("note"), manifest_path.parent.name)))
         expected_violation = case_type != "false_positive"
         failed = False
+        if expected_violation:
+            expected_violation_total += 1
+            if predicted_violation:
+                expected_violation_hits += 1
         if case_type == "false_positive" and predicted_violation:
             false_positive += 1
             failed = True
@@ -197,7 +251,11 @@ def _run_pilot_video_eval(settings, model, args: argparse.Namespace) -> dict[str
                 "predicted_violation": predicted_violation,
                 "top_confidence": top_confidence,
                 "labels": labels,
-                "latency_ms": latency_ms,
+                "frame_count": len(frames),
+                "latency_ms": round(sum(case_latency_values) / len(case_latency_values), 3) if case_latency_values else None,
+                "mean_latency_ms": round(sum(case_latency_values) / len(case_latency_values), 3) if case_latency_values else None,
+                "p95_latency_ms": _percentile(case_latency_values, 0.95),
+                "temporal_stability": stability,
                 "scene_tags": scene_tags,
                 "source_path": source_path,
             }
@@ -206,20 +264,39 @@ def _run_pilot_video_eval(settings, model, args: argparse.Namespace) -> dict[str
 
     notes: list[str] = []
     status = "ready"
-    if sampled < 5:
+    if sampled < max(5, int(settings.quality.pilot_replay_min_samples)):
         status = "review_required"
         notes.append("Pilot replay still has too few sampled hard-case frames for a promotion decision.")
     if not any(item["case_type"] == "missed_detection" for item in samples):
         status = "review_required"
         notes.append("Pilot replay still lacks missed-detection samples, so recall cannot be signed off yet.")
+    mean_latency_ms = round(sum(latency_values) / len(latency_values), 3) if latency_values else None
+    p95_latency_ms = _percentile(latency_values, 0.95)
+    clip_hit_rate = round(expected_violation_hits / expected_violation_total, 4) if expected_violation_total else None
+    temporal_stability = round(sum(stability_values) / len(stability_values), 4) if stability_values else None
+    if mean_latency_ms is None or p95_latency_ms is None:
+        status = "review_required"
+        notes.append("Pilot replay still lacks latency samples.")
+    else:
+        if mean_latency_ms > float(settings.quality.mean_latency_ms_threshold):
+            status = "review_required"
+            notes.append("Pilot replay mean latency is above the configured gate.")
+        if p95_latency_ms > float(settings.quality.p95_latency_ms_threshold):
+            status = "review_required"
+            notes.append("Pilot replay p95 latency is above the configured gate.")
 
     return {
         "status": status,
         "evaluation_mode": "hard_case_replay",
         "sampled_cases": sampled,
+        "sampled_clips": sampled,
         "false_positive": false_positive,
         "missed_detection": missed_detection,
-        "average_latency_ms": round(sum(latency_values) / len(latency_values), 3) if latency_values else None,
+        "mean_latency_ms": mean_latency_ms,
+        "average_latency_ms": mean_latency_ms,
+        "p95_latency_ms": p95_latency_ms,
+        "clip_hit_rate": clip_hit_rate,
+        "temporal_stability": temporal_stability,
         "case_types": sorted(selected_types),
         "scene_results": scene_stats,
         "notes": notes,

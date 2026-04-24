@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from helmet_monitoring.core.config import AppSettings, CameraSettings
 from helmet_monitoring.core.schemas import AlertCandidate, ResolvedPerson
 from helmet_monitoring.services.badge_ocr import LocalBadgeOcrService
@@ -75,6 +77,30 @@ class IdentityResolver:
         self.badge_ocr = LocalBadgeOcrService(settings)
         self.face_recognition = FaceRecognitionService(settings)
         self.llm_fallback = LlmFallbackService(settings)
+        self._resolution_cache: dict[str, tuple[float, ResolvedPerson]] = {}
+        self._resolution_cache_ttl_seconds = 15.0
+
+    def _resolution_cache_key(self, camera: CameraSettings, candidate: AlertCandidate) -> str:
+        track_part = candidate.track_id or "none"
+        return f"{camera.camera_id}:{candidate.event_key}:{track_part}"
+
+    def _get_cached_resolution(self, cache_key: str) -> ResolvedPerson | None:
+        now = time.monotonic()
+        expired = [key for key, (expires_at, _) in self._resolution_cache.items() if expires_at <= now]
+        for key in expired:
+            self._resolution_cache.pop(key, None)
+        cached = self._resolution_cache.get(cache_key)
+        if cached is None:
+            return None
+        expires_at, result = cached
+        if expires_at <= now:
+            self._resolution_cache.pop(cache_key, None)
+            return None
+        return result
+
+    def _store_cached_resolution(self, cache_key: str, result: ResolvedPerson) -> ResolvedPerson:
+        self._resolution_cache[cache_key] = (time.monotonic() + self._resolution_cache_ttl_seconds, result)
+        return result
 
     def _resolve_camera_default(self, camera: CameraSettings) -> tuple[dict | None, str | None, float | None, str | None]:
         explicit = self.directory.get_person_by_id(camera.default_person_id)
@@ -106,7 +132,7 @@ class IdentityResolver:
             return top, candidates
         return None, candidates
 
-    def resolve(self, camera: CameraSettings, candidate: AlertCandidate, frame) -> ResolvedPerson:
+    def _resolve_uncached(self, camera: CameraSettings, candidate: AlertCandidate, frame) -> ResolvedPerson:
         badge_result = self.badge_ocr.recognize(frame, candidate.bbox)
         face_match = self.face_recognition.match(frame, candidate.bbox, self.directory.get_face_profiles())
 
@@ -262,6 +288,13 @@ class IdentityResolver:
             face_crop=face_match.crop,
             badge_crop=badge_result.crop,
         )
+
+    def resolve(self, camera: CameraSettings, candidate: AlertCandidate, frame) -> ResolvedPerson:
+        cache_key = self._resolution_cache_key(camera, candidate)
+        cached = self._get_cached_resolution(cache_key)
+        if cached is not None:
+            return cached
+        return self._store_cached_resolution(cache_key, self._resolve_uncached(camera, candidate, frame))
 
 
 def build_identity_resolver(settings: AppSettings) -> IdentityResolver:

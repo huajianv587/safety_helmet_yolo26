@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -51,6 +52,11 @@ class PersonDirectory:
             self.client = create_client(settings.supabase.url, settings.supabase.service_role_key)
         self._people_cache: list[dict] = []
         self._face_profile_cache: list[FaceProfileRecord] = []
+        self._people_by_id: dict[str, dict] = {}
+        self._people_by_employee_id: dict[str, dict] = {}
+        self._name_index: dict[str, list[dict]] = defaultdict(list)
+        self._alias_index: dict[str, list[dict]] = defaultdict(list)
+        self._badge_keyword_index: dict[str, list[dict]] = defaultdict(list)
         self._loaded_at = 0.0
 
     def _refresh_due(self) -> bool:
@@ -137,8 +143,66 @@ class PersonDirectory:
         people_by_id = {str(item["person_id"]): item for item in people if item.get("person_id")}
         profiles = self._load_face_profiles_from_supabase(people_by_id)
         self._people_cache = list(people_by_id.values())
+        self._rebuild_indexes(self._people_cache)
         self._face_profile_cache = profiles
         self._loaded_at = time.time()
+
+    def _rebuild_indexes(self, people: list[dict]) -> None:
+        self._people_by_id = {
+            str(person.get("person_id")): person
+            for person in people
+            if person.get("person_id")
+        }
+        self._people_by_employee_id = {}
+        self._name_index = defaultdict(list)
+        self._alias_index = defaultdict(list)
+        self._badge_keyword_index = defaultdict(list)
+
+        for person in people:
+            employee_id = normalize_text(person.get("employee_id"))
+            if employee_id and employee_id not in self._people_by_employee_id:
+                self._people_by_employee_id[employee_id] = person
+
+            name = normalize_text(person.get("name"))
+            if name:
+                self._name_index[name].append(person)
+
+            for alias in (normalize_text(item) for item in _tuple_from_person_values(person.get("aliases"))):
+                if alias:
+                    self._alias_index[alias].append(person)
+
+            for keyword in (normalize_text(item) for item in _tuple_from_person_values(person.get("badge_keywords"))):
+                if keyword:
+                    self._badge_keyword_index[keyword].append(person)
+
+    @staticmethod
+    def _candidate_identity(person: dict) -> str:
+        return str(person.get("person_id") or person.get("employee_id") or id(person))
+
+    def _indexed_candidates(self, target: str) -> list[dict]:
+        ordered: list[dict] = []
+        seen: set[str] = set()
+
+        def add(person: dict | None) -> None:
+            if person is None:
+                return
+            identity = self._candidate_identity(person)
+            if identity in seen:
+                return
+            seen.add(identity)
+            ordered.append(person)
+
+        add(self._people_by_employee_id.get(target))
+
+        for index in (self._name_index, self._alias_index, self._badge_keyword_index):
+            for token, people in index.items():
+                if not token:
+                    continue
+                if target == token or token in target or target in token:
+                    for person in people:
+                        add(person)
+
+        return ordered
 
     def get_people(self) -> list[dict]:
         self.refresh()
@@ -148,10 +212,7 @@ class PersonDirectory:
         if not person_id:
             return None
         self.refresh()
-        for person in self._people_cache:
-            if person.get("person_id") == person_id:
-                return person
-        return None
+        return self._people_by_id.get(str(person_id))
 
     def get_face_profiles(self) -> list[FaceProfileRecord]:
         self.refresh()
@@ -162,10 +223,7 @@ class PersonDirectory:
         if not target:
             return None
         self.refresh()
-        for person in self._people_cache:
-            if normalize_text(person.get("employee_id")) == target:
-                return person
-        return None
+        return self._people_by_employee_id.get(target)
 
     def suggest_default_person_for_camera(self, camera) -> dict | None:
         self.refresh()
@@ -215,8 +273,16 @@ class PersonDirectory:
         if not target:
             return []
         self.refresh()
+        candidate_pool = self._indexed_candidates(target)
+        if len(candidate_pool) < len(self._people_cache):
+            seen = {self._candidate_identity(person) for person in candidate_pool}
+            candidate_pool.extend(
+                person for person in self._people_cache
+                if self._candidate_identity(person) not in seen
+            )
+
         scored: list[tuple[float, dict]] = []
-        for person in self._people_cache:
+        for person in candidate_pool:
             employee = normalize_text(person.get("employee_id"))
             name = normalize_text(person.get("name"))
             department = normalize_text(person.get("department"))
